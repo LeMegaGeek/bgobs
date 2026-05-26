@@ -7,63 +7,99 @@
 set -euo pipefail
 shopt -s nullglob
 
-: "${ORT_VERSION:=v1.23.2}"
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${PLUGIN_BUILD_DIR:="$ROOT_DIR"}"
 
-clone_onnxruntime() {
-  if [ -d "$PLUGIN_BUILD_DIR/onnxruntime" ]; then
-    git -C "$PLUGIN_BUILD_DIR/onnxruntime" reset --hard
-  else
-    git clone --depth 1 --branch "$ORT_VERSION" https://github.com/microsoft/onnxruntime.git "$PLUGIN_BUILD_DIR/onnxruntime"
-  fi
+export PLUGIN_BUILD_DIR
 
-  patches=("$ROOT_DIR"/scripts/ort_patches/"$ORT_VERSION"/*.patch)
-  if [[ "${#patches[@]}" -gt 0 ]]; then
-    git -C "$PLUGIN_BUILD_DIR/onnxruntime" apply -v "${patches[@]}"
-  fi
-}
+. "$ROOT_DIR/buildspec.props"
 
 debian_forky() {
-  clone_onnxruntime
+  printf 'INFO: No operation required for setup on Debian Forky.\n'
 }
 
 ubuntu_resolute() {
-  clone_onnxruntime
+  printf 'INFO: No operation required for setup on Ubuntu Resolute.\n'
 }
 
-if [ -f /etc/os-release ]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
+macos() {
+  local PYTHON MINIMAL_PATH
 
-  case "$NAME" in
-  'Debian GNU/Linux')
-    case "$VERSION_CODENAME" in
-    forky)
-      debian_forky
-      exit 0
+  : "${PYTHON:=python3.13}"
+  MINIMAL_PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+  "$ROOT_DIR/scripts/build_onnxruntime_macos.sh" clone_onnxruntime
+
+  "$ROOT_DIR/scripts/build_obs_macos.sh" download_prebuilt
+  "$ROOT_DIR/scripts/build_obs_macos.sh" download_qt6
+  "$ROOT_DIR/scripts/build_obs_macos.sh" clone_obs
+
+  if [[ -n "${VCPKG_ROOT:-}" ]]; then
+    printf 'Using VCPKG_ROOT=%s.\n' "$VCPKG_ROOT" >&2
+  else
+    VCPKG_ROOT="$PLUGIN_BUILD_DIR/vcpkg"
+
+    if ! [[ -d "$VCPKG_ROOT" ]]; then
+      printf 'VCPKG_ROOT missing. Cloning vcpkg on %s...\n' "$VCPKG_ROOT" >&2
+      git clone --filter blob:none --branch "$vcpkg_git_tag" https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+    fi
+
+    if ! [[ -e "$VCPKG_ROOT/vcpkg" ]]; then
+      "$VCPKG_ROOT/bootstrap-vcpkg.sh"
+    fi
+  fi
+
+  PATH="$MINIMAL_PATH" "$VCPKG_ROOT/vcpkg" fetch cmake
+  PATH="$MINIMAL_PATH" "$VCPKG_ROOT/vcpkg" fetch ninja
+
+  local venv_dir="$PLUGIN_BUILD_DIR/.venv"
+
+  if ! [[ -d "$venv_dir" ]]; then
+    "$PYTHON" -m venv "$venv_dir"
+  fi
+
+  "$venv_dir/bin/pip" install -r "$ROOT_DIR/requirements-build.txt"
+}
+
+case "$(uname -s)" in
+Darwin)
+  macos
+  exit 0
+  ;;
+*)
+  if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+
+    case "$ID" in
+    debian)
+      case "$VERSION_CODENAME" in
+      forky)
+        debian_forky
+        exit 0
+        ;;
+      *)
+        printf 'ERROR: Debian %s is not supported.\n' "$VERSION_CODENAME" >&2
+        exit 1
+        ;;
+      esac
       ;;
-    *)
-      printf 'ERROR: Debian %s is not supported.\n' "$VERSION_CODENAME" >&2
-      exit 1
+    ubuntu)
+      case "$VERSION_CODENAME" in
+      resolute)
+        ubuntu_resolute
+        exit 0
+        ;;
+      *)
+        printf 'ERROR: Ubuntu %s is not supported.\n' "$VERSION_CODENAME" >&2
+        exit 1
+        ;;
+      esac
       ;;
     esac
-    ;;
-  Ubuntu)
-    case "$VERSION_CODENAME" in
-    resolute)
-      ubuntu_resolute
-      exit 0
-      ;;
-    *)
-      printf 'ERROR: Ubuntu %s is not supported.\n' "$VERSION_CODENAME" >&2
-      exit 1
-      ;;
-    esac
-    ;;
-  esac
-fi
+  fi
+  ;;
+esac
 
 printf 'ERROR: Your platform is not supported. Exiting...' >&2
 exit 1

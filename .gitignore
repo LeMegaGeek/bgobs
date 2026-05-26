@@ -1,9 +1,14 @@
 .DS_Store
 .venv/
 .vscode/
+/.ccache*/
 /.deps_vendor/
 /.deps/
-/build_*/
 /build/
+/build_*
+/obs-studio/
 /onnxruntime/
+/ort_installed*/
 /release/
+/vcpkg_installed*/
+/vcpkg/

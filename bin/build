@@ -9,60 +9,167 @@ shopt -s nullglob
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${PLUGIN_BUILD_DIR:=$ROOT_DIR}"
+: "${PLUGIN_CONFIG:=RelWithDebInfo}"
+
+export PLUGIN_BUILD_DIR
+
+# shellcheck disable=SC2120
+xcbeautify() { if command -v xcbeautify >/dev/null 2>&1; then command xcbeautify "$@"; else cat; fi; }
 
 debian_forky() {
-  cmake -G Ninja -S "$ROOT_DIR" -B "$PLUGIN_BUILD_DIR/build"
+  cmake -G Ninja -S "$ROOT_DIR" -B "$PLUGIN_BUILD_DIR/build_plugin"
 
-  cmake --build "$PLUGIN_BUILD_DIR/build"
+  cmake --build "$PLUGIN_BUILD_DIR/build_plugin"
 
-  (cd "$PLUGIN_BUILD_DIR/build" && cpack -G DEB)
+  (cd "$PLUGIN_BUILD_DIR/build_plugin" && cpack -G DEB)
+
+  . "$PLUGIN_BUILD_DIR/build_plugin/cmake_export.sh"
 
   printf 'Run the following command to install the plugin:\n'
-  printf '  sudo dpkg -i %s\n' "$ROOT_DIR/release/obs-backgroundremoval_*.deb"
+  printf '  sudo dpkg -i %s\n' "$ROOT_DIR/release/${PLUGIN_NAME}_*.deb"
 }
 
 ubuntu_resolute() {
-  cmake -G Ninja -S "$ROOT_DIR" -B "$PLUGIN_BUILD_DIR/build"
+  cmake -G Ninja -S "$ROOT_DIR" -B "$PLUGIN_BUILD_DIR/build_plugin"
 
-  cmake --build "$PLUGIN_BUILD_DIR/build"
+  cmake --build "$PLUGIN_BUILD_DIR/build_plugin"
 
-  (cd "$PLUGIN_BUILD_DIR/build" && cpack -G DEB)
+  (cd "$PLUGIN_BUILD_DIR/build_plugin" && cpack -G DEB)
+
+  . "$PLUGIN_BUILD_DIR/build_plugin/cmake_export.sh"
 
   printf 'Run the following command to install the plugin:\n'
-  printf '  sudo dpkg -i %s\n' "$ROOT_DIR/release/obs-backgroundremoval_*.deb"
+  printf '  sudo dpkg -i %s\n' "$ROOT_DIR/release/${PLUGIN_NAME}_*.deb"
 }
 
-if [ -f /etc/os-release ]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
+macos() {
+  : "${VCPKG_ROOT:=$PLUGIN_BUILD_DIR/vcpkg}"
 
-  case "$NAME" in
-  'Debian GNU/Linux')
-    case "$VERSION_CODENAME" in
-    forky)
-      debian_forky
-      exit 0
+  if [[ -z "${VCPKG_BINARY_SOURCES:-}" ]]; then
+    VCPKG_BINARY_SOURCES="clear;files,$PLUGIN_BUILD_DIR/.vcpkg_archives,readwrite;http,https://vcpkg-obs.kaito.tokyo/{name}/{version}/{sha},read"
+  fi
+
+  CMAKE_EXE="$(PATH="/usr/bin:/bin:/usr/sbin:/sbin" "$VCPKG_ROOT/vcpkg" fetch cmake | tail -n1)"
+  NINJA_EXE="$(PATH="/usr/bin:/bin:/usr/sbin:/sbin" "$VCPKG_ROOT/vcpkg" fetch ninja | tail -n1)"
+
+  CCACHE_EXE="$(command -v ccache)"
+
+  build_obs_macos() {
+    env -i \
+      DEVELOPER_DIR="$(xcode-select --print-path)" \
+      HOME="$HOME" \
+      PATH="${CMAKE_EXE%/*}:/usr/bin:/bin:/usr/sbin:/sbin" \
+      PLUGIN_BUILD_DIR="$PLUGIN_BUILD_DIR" \
+      "$ROOT_DIR/scripts/build_obs_macos.sh" "$@"
+  }
+
+  build_obs_macos configure_obs
+  build_obs_macos build_obs Debug | xcbeautify
+  build_obs_macos build_obs Release | xcbeautify
+  build_obs_macos install_obs Debug
+  build_obs_macos install_obs Release
+
+  vcpkg_install() {
+    env -i \
+      DEVELOPER_DIR="$(xcode-select --print-path)" \
+      HOME="$HOME" \
+      PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+      PLUGIN_BUILD_DIR="$PLUGIN_BUILD_DIR" \
+      VCPKG_BINARY_SOURCES="$VCPKG_BINARY_SOURCES" \
+      "$VCPKG_ROOT/vcpkg" install "$@"
+  }
+
+  vcpkg_install --triplet=arm64-osx-obs --x-install-root="$PLUGIN_BUILD_DIR/vcpkg_installed_arm64"
+  vcpkg_install --triplet=x64-osx-obs --x-install-root="$PLUGIN_BUILD_DIR/vcpkg_installed_x64"
+
+  "$ROOT_DIR/scripts/lipo_vcpkg_macos.sh" \
+    "$PLUGIN_BUILD_DIR/vcpkg_installed/universal-osx-obs" \
+    "$PLUGIN_BUILD_DIR/vcpkg_installed_arm64/arm64-osx-obs" \
+    "$PLUGIN_BUILD_DIR/vcpkg_installed_x64/x64-osx-obs"
+
+  build_onnxruntime_macos() {
+    env -i \
+      CCACHE_DIR="$PLUGIN_BUILD_DIR/.ccache_ort" \
+      CCACHE_SLOPPINESS='include_file_mtime,time_macros' \
+      DEVELOPER_DIR="$(xcode-select --print-path)" \
+      HOME="$HOME" \
+      PATH="${CMAKE_EXE%/*}:${NINJA_EXE%/*}:${CCACHE_EXE%/*}:/usr/bin:/bin:/usr/sbin:/sbin" \
+      PLUGIN_BUILD_DIR="$PLUGIN_BUILD_DIR" \
+      PYTHON="$PLUGIN_BUILD_DIR/.venv/bin/python" \
+      VCPKG_BINARY_SOURCES="$VCPKG_BINARY_SOURCES" \
+      "$ROOT_DIR/scripts/build_onnxruntime_macos.sh" "$@"
+  }
+
+  CCACHE_DIR="$PLUGIN_BUILD_DIR/.ccache_ort" "$CCACHE_EXE" --zero-stats
+
+  build_onnxruntime_macos build_py arm64 --update
+  build_onnxruntime_macos build_py x86_64 --update
+  build_onnxruntime_macos build_py arm64 --build | xcbeautify
+  build_onnxruntime_macos build_py x86_64 --build | xcbeautify
+  build_onnxruntime_macos install_onnxruntime
+
+  CCACHE_DIR="$PLUGIN_BUILD_DIR/.ccache_ort" "$CCACHE_EXE" --show-stats
+
+  plugin_cmake() {
+    env -i \
+      DEVELOPER_DIR="$(xcode-select --print-path)" \
+      HOME="$HOME" \
+      PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+      PLUGIN_BUILD_DIR="$PLUGIN_BUILD_DIR" \
+      PYTHON="$PLUGIN_BUILD_DIR/.venv/bin/python" \
+      VCPKG_BINARY_SOURCES="$VCPKG_BINARY_SOURCES" \
+      "$CMAKE_EXE" "$@"
+  }
+
+  plugin_cmake -G Xcode -S "$ROOT_DIR" -B "$PLUGIN_BUILD_DIR/build_plugin"
+
+  plugin_cmake --build "$PLUGIN_BUILD_DIR/build_plugin" --config "$PLUGIN_CONFIG" | xcbeautify
+
+  . "$PLUGIN_BUILD_DIR/build_plugin/cmake_export.sh"
+
+  printf 'Run the following command to install the plugin:\n'
+  printf '  cmake --install "%s" --config "%s" --prefix ~\n' "$PLUGIN_BUILD_DIR/build_plugin" "$PLUGIN_CONFIG"
+}
+
+case "$(uname -s)" in
+Darwin)
+  macos
+  exit 0
+  ;;
+*)
+  if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+
+    case "$ID" in
+    debian)
+      case "$VERSION_CODENAME" in
+      forky)
+        debian_forky
+        exit 0
+        ;;
+      *)
+        printf 'ERROR: Debian %s is not supported.\n' "$VERSION_CODENAME" >&2
+        exit 1
+        ;;
+      esac
       ;;
-    *)
-      printf 'ERROR: Debian %s is not supported.\n' "$VERSION_CODENAME" >&2
-      exit 1
+    ubuntu)
+      case "$VERSION_CODENAME" in
+      resolute)
+        ubuntu_resolute
+        exit 0
+        ;;
+      *)
+        printf 'ERROR: Ubuntu %s is not supported.\n' "$VERSION_CODENAME" >&2
+        exit 1
+        ;;
+      esac
       ;;
     esac
-    ;;
-  Ubuntu)
-    case "$VERSION_CODENAME" in
-    resolute)
-      ubuntu_resolute
-      exit 0
-      ;;
-    *)
-      printf 'ERROR: Ubuntu %s is not supported.\n' "$VERSION_CODENAME" >&2
-      exit 1
-      ;;
-    esac
-    ;;
-  esac
-fi
+  fi
+  ;;
+esac
 
 printf 'ERROR: Your platform is not supported. Exiting...' >&2
 exit 1

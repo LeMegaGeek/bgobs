@@ -7,7 +7,7 @@
       "features": [
         "ssl"
       ],
-      "platform": "(windows & !uwp) | mingw"
+      "platform": "((windows & !uwp) | mingw) & !osx"
     },
     {
       "name": "curl",
@@ -15,16 +15,13 @@
       "features": [
         "wolfssl"
       ],
-      "platform": "(uwp | !windows) & !mingw"
+      "platform": "((uwp | !windows) & !mingw) & !osx"
     },
     {
       "name": "opencv4",
       "default-features": false,
       "features": [
-        "jpeg",
-        "png",
-        "tiff",
-        "webp"
+        "jpeg"
       ]
     }
   ]

@@ -106,10 +106,6 @@ jobs:
           . $env:CLEAN_PWSH_ENV
           vswhere -version '[17.0,18.0)'
 
-      - name: Extract plugin buildspec
-        id: buildspec
-        uses: ./.github/actions/extract-buildspec
-
       - name: Checkout vcpkg
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -241,7 +237,7 @@ jobs:
       - name: Upload Ort Binary
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: ${{ steps.buildspec.outputs.NAME }}-ortbinary-windows-x64-${{ github.run_id }}
+          name: ortbinary-windows-x64-${{ github.run_id }}
           path: |
             .deps_vendor/ort_x64-prefix
           if-no-files-found: error
@@ -298,7 +294,7 @@ jobs:
       - name: Upload Plugin Binary
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: ${{ steps.buildspec.outputs.NAME }}-pluginbinary-windows-x64-${{ github.run_id }}
+          name: pluginbinary-windows-x64-${{ github.run_id }}
           path: |
             release/*-windows-x64.zip
             release/*-windows-x64-pdb.zip
