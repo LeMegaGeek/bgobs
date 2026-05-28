@@ -60,10 +60,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Extract plugin buildspec
-        id: buildspec
-        uses: ./.github/actions/extract-buildspec
-
       - name: Set up Python for build requirements
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
@@ -215,7 +211,7 @@ jobs:
       - name: Upload Plugin Binary
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: ${{ steps.buildspec.outputs.NAME }}-pluginbinary-${{ runner.os }}-x86_64-${{ github.run_id }}
+          name: pluginbinary-${{ runner.os }}-x86_64-${{ github.run_id }}
           path: |
             release/*-x86_64-linux-gnu.deb
             release/*-x86_64-linux-gnu-dbgsym.ddeb

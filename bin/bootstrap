@@ -45,37 +45,49 @@ ubuntu_resolute() {
     zip
 }
 
-if [ -f /etc/os-release ]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
+macos() {
+  brew install ccache python@3.13 xcbeautify
+}
 
-  case "$NAME" in
-  'Debian GNU/Linux')
-    case "$VERSION_CODENAME" in
-    forky)
-      debian_forky
-      exit 0
+case "$(uname -s)" in
+Darwin)
+  macos
+  exit 0
+  ;;
+*)
+  if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+
+    case "$ID" in
+    debian)
+      case "$VERSION_CODENAME" in
+      forky)
+        debian_forky
+        exit 0
+        ;;
+      *)
+        printf 'ERROR: Debian %s is not supported.\n' "$VERSION_CODENAME" >&2
+        exit 1
+        ;;
+      esac
       ;;
-    *)
-      printf 'ERROR: Debian %s is not supported.\n' "$VERSION_CODENAME" >&2
-      exit 1
+    ubuntu)
+      case "$VERSION_CODENAME" in
+      resolute)
+        ubuntu_resolute
+        exit 0
+        ;;
+      *)
+        printf 'ERROR: Ubuntu %s is not supported.\n' "$VERSION_CODENAME" >&2
+        exit 1
+        ;;
+      esac
       ;;
     esac
-    ;;
-  Ubuntu)
-    case "$VERSION_CODENAME" in
-    resolute)
-      ubuntu_resolute
-      exit 0
-      ;;
-    *)
-      printf 'ERROR: Ubuntu %s is not supported.\n' "$VERSION_CODENAME" >&2
-      exit 1
-      ;;
-    esac
-    ;;
-  esac
-fi
+  fi
+  ;;
+esac
 
 printf 'ERROR: Your platform is not supported. Exiting...' >&2
 exit 1

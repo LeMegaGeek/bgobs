@@ -5,20 +5,23 @@
 cmake_minimum_required(VERSION 3.28)
 
 ### Options
-set(PLUGIN_AUTHOR "Roy Shilkrot" CACHE STRING "Author of plugin metadata")
-set(PLUGIN_EMAIL "roy.shil@gmail.com" CACHE STRING "Email of plugin metadata")
-set(PLUGIN_BUILD_NUMBER "1" CACHE STRING "Build number of plugin metadata")
+set(PLUGIN_NAME "obs-backgroundremoval" CACHE STRING "Name of plugin")
+set(PLUGIN_DISPLAY_NAME "OBS Background Removal" CACHE STRING "Display name of plugin")
+set(PLUGIN_AUTHOR "Roy Shilkrot" CACHE STRING "Author of plugin")
+set(PLUGIN_EMAIL "roy.shil@gmail.com" CACHE STRING "Author email of plugin")
+set(PLUGIN_BUILD_NUMBER "1" CACHE STRING "Build number in plugin metadata")
+set(PLUGIN_BUNDLE_ID "com.royshilkrot.obs-backgroundremoval" CACHE STRING "Bundle ID of plugin installer")
 set(PACKAGE_VERSION_SUFFIX "" CACHE STRING "Version suffix for plugin package")
 
 ### Project
-block(PROPAGATE PLUGIN_VERSION)
+block(SCOPE_FOR POLICIES VARIABLES PROPAGATE PLUGIN_VERSION)
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" VERSION_CONTENT)
   string(STRIP "${VERSION_CONTENT}" PLUGIN_VERSION)
 endblock()
 
 project(obs-backgroundremoval VERSION "${PLUGIN_VERSION}" LANGUAGES C CXX)
 
-block(PROPAGATE OS_LINUX_DETECTED)
+block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OS_LINUX_DETECTED)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(EXISTS "/etc/os-release")
       file(STRINGS "/etc/os-release" OS_RELEASE_ID_LINE REGEX "^ID=")
@@ -45,7 +48,6 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND OS_LINUX MATCHES "(Debian|Ubu
   set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install prefix" FORCE)
 endif()
 
-### CMake modules
 include(GNUInstallDirs)
 
 ### Global configurations
@@ -60,16 +62,41 @@ set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 if(MSVC)
   add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 elseif(APPLE OR OS_LINUX)
-  add_compile_options(-fno-omit-frame-pointer -fstack-protector-strong)
+  add_compile_definitions(SIMDE_ENABLE_OPENMP)
+  add_compile_options(-fopenmp-simd -fno-omit-frame-pointer -fstack-protector-strong)
+endif()
+
+### Configure paths
+if(DEFINED ENV{PLUGIN_BUILD_DIR})
+  set(PLUGIN_BUILD_DIR "$ENV{PLUGIN_BUILD_DIR}")
+else()
+  set(PLUGIN_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
+if(APPLE)
+  list(
+    PREPEND
+    CMAKE_PREFIX_PATH
+    "${PLUGIN_BUILD_DIR}/.deps/obs-deps"
+    "${PLUGIN_BUILD_DIR}/.deps/obs-deps-qt6"
+    "${PLUGIN_BUILD_DIR}/.deps/Debug"
+    "${PLUGIN_BUILD_DIR}/.deps/Debug/Frameworks"
+    "${PLUGIN_BUILD_DIR}/.deps/Release"
+    "${PLUGIN_BUILD_DIR}/.deps/Release/Frameworks"
+    "${PLUGIN_BUILD_DIR}/vcpkg_installed/universal-osx-obs"
+    "${PLUGIN_BUILD_DIR}/vcpkg_installed_ort/universal-osx"
+    "${PLUGIN_BUILD_DIR}/ort_installed"
+  )
 endif()
 
 ### Package dependencies
 find_package(PkgConfig QUIET)
+
 find_package(libobs REQUIRED)
 find_package(obs-frontend-api REQUIRED)
 
-block(PROPAGATE CURL_FOUND)
-  find_package(CURL CONFIG QUIET)
+block(SCOPE_FOR POLICIES VARIABLES PROPAGATE CURL_FOUND)
+  find_package(CURL QUIET)
 
   if(NOT CURL_FOUND AND PkgConfig_FOUND)
     pkg_check_modules(PC_CURL libcurl IMPORTED_TARGET)
@@ -84,7 +111,7 @@ block(PROPAGATE CURL_FOUND)
   endif()
 endblock()
 
-block(PROPAGATE OpenCV_FOUND)
+block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
   find_package(OpenCV CONFIG QUIET)
 
   if(NOT OpenCV_FOUND AND PkgConfig_FOUND)
@@ -109,7 +136,13 @@ block(PROPAGATE OpenCV_FOUND)
   endif()
 endblock()
 
-block(PROPAGATE onnxruntime_FOUND)
+block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND)
+  set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON)
+
+  if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+  endif()
+
   find_package(onnxruntime CONFIG)
 
   if(NOT onnxruntime_FOUND AND PkgConfig_FOUND)
@@ -232,6 +265,50 @@ set(
 )
 
 if(APPLE)
+  set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION "plugin")
+  set_source_files_properties(${EFFECTS_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/effects")
+  set_source_files_properties(${LOCALE_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/locale")
+  set_source_files_properties(${MODELS_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/models")
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${EFFECTS_FILES} ${LOCALE_FILES} ${MODELS_FILES})
+
+  install(
+    TARGETS "${CMAKE_PROJECT_NAME}"
+    BUNDLE DESTINATION "Library/Application Support/obs-studio/plugins"
+    LIBRARY DESTINATION "Library/Application Support/obs-studio/plugins"
+  )
+
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/pkg/Distribution.xml.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/Distribution"
+    @ONLY
+  )
+
+  install(
+    CODE
+      "set(INSTALL_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}\")
+set(PLUGIN_DIR \"\${INSTALL_DIR}/Library/Application Support/obs-studio/plugins\")
+
+set(BUNDLE_PATH \"\${PLUGIN_DIR}/${CMAKE_PROJECT_NAME}.plugin\")
+
+if(EXISTS \"\${BUNDLE_PATH}\")
+  message(STATUS \"Re-signing: \${BUNDLE_PATH}...\")
+
+  execute_process(
+    COMMAND xattr -cr \"\${BUNDLE_PATH}\"
+    COMMAND_ERROR_IS_FATAL NONE
+  )
+
+  execute_process(
+    COMMAND dot_clean -m \"\${BUNDLE_PATH}\"
+    COMMAND_ERROR_IS_FATAL NONE
+  )
+
+  execute_process(
+    COMMAND codesign -s - -f -o runtime --deep \"\${BUNDLE_PATH}\"
+    COMMAND_ERROR_IS_FATAL ANY
+  )
+endif()"
+  )
 elseif(MSVC)
 elseif(OS_LINUX MATCHES "(Debian|Ubuntu)")
   set(OBS_PLUGIN_DATA_DIR "${CMAKE_INSTALL_DATAROOTDIR}/obs/obs-plugins/${CMAKE_PROJECT_NAME}")
@@ -240,7 +317,11 @@ elseif(OS_LINUX MATCHES "(Debian|Ubuntu)")
 
   set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES PREFIX "")
 
-  install(TARGETS "${CMAKE_PROJECT_NAME}" LIBRARY DESTINATION "${OBS_PLUGIN_LIB_DIR}")
+  install(
+    TARGETS "${CMAKE_PROJECT_NAME}"
+    BUNDLE DESTINATION "${OBS_PLUGIN_LIB_DIR}"
+    LIBRARY DESTINATION "${OBS_PLUGIN_LIB_DIR}"
+  )
   install(FILES ${EFFECTS_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/effects")
   install(FILES ${LOCALE_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/locale")
   install(FILES ${MODELS_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/models" OPTIONAL)
@@ -253,7 +334,6 @@ endif()
 set(CPACK_PACKAGE_NAME "${CMAKE_PROJECT_NAME}")
 set(CPACK_PACKAGE_VERSION "${CMAKE_PROJECT_VERSION}${PACKAGE_VERSION_SUFFIX}")
 set(CPACK_PACKAGE_CONTACT "${PLUGIN_AUTHOR} <${PLUGIN_EMAIL}>")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 
 set(CPACK_ARCHIVE_THREADS 0)
 set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/release")
@@ -267,3 +347,21 @@ set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS TRUE)
 
 include(CPack) # This line must be placed after all the package configurations
+
+### Export variables
+block(SCOPE_FOR POLICIES VARIABLES)
+  set(SH_CONTENT "")
+  set(PS1_CONTENT "")
+
+  foreach(VAR_NAME PLUGIN_BUNDLE_ID PLUGIN_DISPLAY_NAME PLUGIN_NAME PLUGIN_VERSION)
+    set(VAR_VALUE "${${VAR_NAME}}")
+    if(NOT VAR_VALUE MATCHES [[^[-A-Za-z0-9._ ]+$]])
+      message(FATAL_ERROR "${VAR_NAME} contains unsupported characters: ${VAR_VALUE}")
+    endif()
+    string(APPEND SH_CONTENT "${VAR_NAME}=\'${VAR_VALUE}\'\n")
+    string(APPEND PS1_CONTENT "\$${VAR_NAME} = \'${VAR_VALUE}\'\n")
+  endforeach()
+
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/cmake_export.sh" "${SH_CONTENT}")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/cmake_export.ps1" "${PS1_CONTENT}")
+endblock()
