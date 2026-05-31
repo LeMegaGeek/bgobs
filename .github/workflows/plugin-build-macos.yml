@@ -233,8 +233,11 @@ jobs:
 
       - name: Reset .ccache_ort stats
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        env:
+          CCACHE_DIR: '${{ github.workspace }}/.ccache_ort'
+          CCACHE_BASEDIR: '${{ github.workspace }}'
         run: |
-          CCACHE_DIR='.ccache_ort' ccache -z
+          ccache -z
 
       - name: Build ONNX Runtime (macOS)
         id: build-onnxruntime
@@ -255,7 +258,8 @@ jobs:
 
           build_onnxruntime_macos() {
             env -i \
-              CCACHE_DIR='.ccache_ort' \
+              CCACHE_DIR="$GITHUB_WORKSPACE/.ccache_ort" \
+              CCACHE_BASEDIR="$GITHUB_WORKSPACE" \
               CCACHE_SLOPPINESS='include_file_mtime,time_macros' \
               DEVELOPER_DIR="$DEVELOPER_DIR" \
               HOME="$HOME" \
@@ -284,10 +288,12 @@ jobs:
 
       - name: Show .ccache_ort stats
         if: always()
-        continue-on-error: true
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        env:
+          CCACHE_DIR: '${{ github.workspace }}/.ccache_ort'
+          CCACHE_BASEDIR: '${{ github.workspace }}'
         run: |
-          CCACHE_DIR='.ccache_ort' ccache -s
+          ccache -s
 
       - name: Build Plugin (macOS)
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
