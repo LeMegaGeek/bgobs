@@ -24,7 +24,6 @@ FARPROC WINAPI DelayLoadHook(unsigned dliNotify, PDelayLoadInfo pdli)
 			GetModuleFileNameW(reinterpret_cast<HMODULE>(&__ImageBase), modulePath, MAX_PATH);
 			const std::filesystem::path absPath =
 				std::filesystem::path(modulePath).parent_path() / L"onnxruntime.dll";
-			obs_log(LOG_INFO, "Loading onnxruntime.dll from plugin binary directory");
 			return (FARPROC)LoadLibraryExW(absPath.c_str(), NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
 		} else {
 			return NULL;
