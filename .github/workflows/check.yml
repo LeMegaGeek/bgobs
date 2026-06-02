@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git ls-files CMakeLists.txt "*.cmake" | xargs --no-run-if-empty gersemi --check
+          gersemi --check CMakeLists.txt
 
   check-reuse:
     name: Check reuse
