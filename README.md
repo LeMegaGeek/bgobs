@@ -56,6 +56,12 @@ The supported platforms are:
 
 We plan to add building scripts for popular platforms such as Windows, Mac, and various distributions of Linux.
 
+## Development Documentation
+
+- [Background mask post-processing](docs/MASK-POST-PROCESSING.md)
+- [Local Linux OBS build](docs/LOCAL-OBS-LINUX.md)
+- [Windows PortableApps install layout](docs/WINDOWS-PORTABLEAPPS.md)
+
 ## Introduction
 
 This plugin is meant to make it easy to replace the background in portrait images and video.

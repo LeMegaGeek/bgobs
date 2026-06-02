@@ -75,8 +75,7 @@ endif()
 
 if(APPLE)
   list(
-    PREPEND
-    CMAKE_PREFIX_PATH
+    PREPEND CMAKE_PREFIX_PATH
     "${PLUGIN_BUILD_DIR}/.deps/obs-deps"
     "${PLUGIN_BUILD_DIR}/.deps/obs-deps-qt6"
     "${PLUGIN_BUILD_DIR}/.deps/Debug"
@@ -163,6 +162,28 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND)
 endblock()
 
 ### Plugin main
+set(
+  BACKGROUND_FILTER_SOURCES
+  src/background-filter-info.c
+  src/background-filter.cpp
+  src/background/mask-post-processing.cpp
+)
+
+set(ENHANCE_FILTER_SOURCES src/enhance-filter.cpp src/enhance-filter-info.c)
+
+set(
+  PLUGIN_SOURCES
+  src/plugin-main.c
+  src/plugin-support.c
+  src/ort-utils/ort-session-utils.cpp
+  src/obs-utils/obs-utils.cpp
+  src/obs-utils/obs-config-utils.cpp
+  src/update-checker/github-utils.cpp
+  src/update-checker/update-checker.cpp
+  ${BACKGROUND_FILTER_SOURCES}
+  ${ENHANCE_FILTER_SOURCES}
+)
+
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
 if(MSVC)
@@ -183,21 +204,22 @@ target_link_libraries(
     OpenCV::opencv_imgproc
 )
 
-target_sources(
-  ${CMAKE_PROJECT_NAME}
-  PRIVATE
-    src/plugin-main.c
-    src/plugin-support.c
-    src/ort-utils/ort-session-utils.cpp
-    src/obs-utils/obs-utils.cpp
-    src/obs-utils/obs-config-utils.cpp
-    src/update-checker/github-utils.cpp
-    src/update-checker/update-checker.cpp
-    src/background-filter-info.c
-    src/background-filter.cpp
-    src/enhance-filter.cpp
-    src/enhance-filter-info.c
-)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
+
+include(CTest)
+if(BUILD_TESTING)
+  set(
+    MASK_POST_PROCESSING_TEST_SOURCES
+    tests/background/mask-post-processing-test.cpp
+    src/background/mask-post-processing.cpp
+  )
+
+  add_executable(mask-post-processing-test)
+  target_sources(mask-post-processing-test PRIVATE ${MASK_POST_PROCESSING_TEST_SOURCES})
+  target_include_directories(mask-post-processing-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  target_link_libraries(mask-post-processing-test PRIVATE OpenCV::opencv_core OpenCV::opencv_imgproc)
+  add_test(NAME mask-post-processing COMMAND mask-post-processing-test)
+endif()
 
 ### Hide symbols
 if(APPLE)
