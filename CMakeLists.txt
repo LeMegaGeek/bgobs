@@ -158,7 +158,7 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIM
   if(NOT onnxruntime_FOUND AND WIN32)
     find_path(OBS_BG_ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_cxx_api.h PATH_SUFFIXES include)
     find_library(OBS_BG_ONNXRUNTIME_LIBRARY NAMES onnxruntime PATH_SUFFIXES lib)
-    find_file(OBS_BG_ONNXRUNTIME_RUNTIME NAMES onnxruntime.dll PATH_SUFFIXES bin)
+    find_file(OBS_BG_ONNXRUNTIME_RUNTIME NAMES onnxruntime.dll PATH_SUFFIXES bin lib)
 
     if(OBS_BG_ONNXRUNTIME_INCLUDE_DIR AND OBS_BG_ONNXRUNTIME_LIBRARY)
       add_library(onnxruntime::onnxruntime SHARED IMPORTED)

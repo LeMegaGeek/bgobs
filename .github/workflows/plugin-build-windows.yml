@@ -220,7 +220,7 @@ jobs:
           foreach ($RequiredPath in @(
             "$PrefixDir\include\onnxruntime_cxx_api.h",
             "$PrefixDir\lib\onnxruntime.lib",
-            "$PrefixDir\bin\onnxruntime.dll"
+            "$PrefixDir\lib\onnxruntime.dll"
           )) {
             if (-not (Test-Path $RequiredPath -PathType Leaf)) {
               Write-Error "Required ONNX Runtime file is missing: $RequiredPath"
