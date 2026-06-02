@@ -145,14 +145,36 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
   endif()
 endblock()
 
-block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND)
+block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIME_DELAYLOAD)
   set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON)
+  set(OBS_BG_ONNXRUNTIME_DELAYLOAD FALSE)
 
   if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
   endif()
 
   find_package(onnxruntime CONFIG)
+
+  if(NOT onnxruntime_FOUND AND WIN32)
+    find_path(OBS_BG_ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_cxx_api.h PATH_SUFFIXES include)
+    find_library(OBS_BG_ONNXRUNTIME_LIBRARY NAMES onnxruntime PATH_SUFFIXES lib)
+    find_file(OBS_BG_ONNXRUNTIME_RUNTIME NAMES onnxruntime.dll PATH_SUFFIXES bin)
+
+    if(OBS_BG_ONNXRUNTIME_INCLUDE_DIR AND OBS_BG_ONNXRUNTIME_LIBRARY)
+      add_library(onnxruntime::onnxruntime SHARED IMPORTED)
+      set_target_properties(
+        onnxruntime::onnxruntime
+        PROPERTIES
+          INTERFACE_INCLUDE_DIRECTORIES "${OBS_BG_ONNXRUNTIME_INCLUDE_DIR}"
+          IMPORTED_IMPLIB "${OBS_BG_ONNXRUNTIME_LIBRARY}"
+      )
+      if(OBS_BG_ONNXRUNTIME_RUNTIME)
+        set_target_properties(onnxruntime::onnxruntime PROPERTIES IMPORTED_LOCATION "${OBS_BG_ONNXRUNTIME_RUNTIME}")
+      endif()
+      set(onnxruntime_FOUND TRUE)
+      set(OBS_BG_ONNXRUNTIME_DELAYLOAD TRUE)
+    endif()
+  endif()
 
   if(NOT onnxruntime_FOUND AND PkgConfig_FOUND)
     pkg_check_modules(PC_onnxruntime onnxruntime IMPORTED_TARGET)
@@ -239,6 +261,11 @@ if(APPLE)
   )
 elseif(MSVC)
   target_sources(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/exported_symbols_windows.def")
+  if(OBS_BG_ONNXRUNTIME_DELAYLOAD)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/DelayLoad.cpp")
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE delayimp)
+    target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "/DELAYLOAD:onnxruntime.dll")
+  endif()
 elseif(OS_LINUX)
   target_link_options(
     ${CMAKE_PROJECT_NAME}
