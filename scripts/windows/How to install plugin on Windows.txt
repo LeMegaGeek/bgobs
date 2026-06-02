@@ -1,9 +1,47 @@
 How to Install OBS Background Removal Plugin on Windows
 =============================================================
 
+PortableApps OBS Studio
+-----------------------
+
+1. Close OBS Studio.
+
+2. Find the folder that contains OBS-StudioPortable.exe.
+
+   Example:
+
+     D:\PortableApps\OBS-StudioPortable\
+
+3. Open or create this folder:
+
+     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\
+
+4. Copy the `obs-backgroundremoval` folder from this ZIP into that `plugins`
+   folder.
+
+5. The final layout should include:
+
+     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\bin\64bit\obs-backgroundremoval.dll
+     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\models\
+     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\locale\
+     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\effects\
+
+6. Restart OBS Studio and check the video source filter list for:
+
+     Background Removal
+     Low-Light Enhancement
+
+
+Standard OBS Studio
+-------------------
+
 Copy the `obs-backgroundremoval` folder to your OBS Studio plugins directory.
 
-The default path is `C:/ProgramData/obs-studio/plugins\`.
+The supported default path is:
 
-If `C:/ProgramData/obs-studio` or `C:/ProgramData/obs-studio\plugins` folders
-do not exists, create them manually first.
+  C:\ProgramData\obs-studio\plugins\
+
+If `C:\ProgramData\obs-studio` or `C:\ProgramData\obs-studio\plugins` do not
+exist, create them manually first.
+
+Do not install this plugin under `C:\Program Files\obs-studio`.

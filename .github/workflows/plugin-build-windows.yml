@@ -9,7 +9,26 @@
 # version: 1.1.0
 # date: 2026-04-04
 
+name: Windows Package
+
 on:
+  workflow_dispatch:
+    inputs:
+      VCPKG_BINARY_SOURCES:
+        description: The vcpkg binary cache configuration.
+        required: true
+        type: string
+        default: clear;http,https://vcpkg-obs.kaito.tokyo/{name}/{version}/{sha},read
+      vcpkg-version:
+        description: The vcpkg git ref to use.
+        required: true
+        type: string
+        default: 9849e070ad4c3383890fb1c80ae0c54325e2484a
+      ort-version:
+        description: The ONNX Runtime version.
+        required: true
+        type: string
+        default: v1.23.2
   workflow_call:
     inputs:
       environment:
@@ -256,6 +275,7 @@ jobs:
         shell: pwsh
         env:
           PATH: '${{ env.FILTERED_PATH }}'
+          VCPKG_ROOT: '${{ env.ROOT_VCPKG_ROOT }}'
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
@@ -263,7 +283,32 @@ jobs:
 
           . $env:CLEAN_PWSH_ENV
 
-          cmake --preset windows-ci-x64
+          $Spec = Get-Content buildspec.json -Raw | ConvertFrom-Json
+          $DepsDir = Join-Path $pwd ".deps"
+          $PrebuiltVersion = $Spec.dependencies.prebuilt.version
+          $Qt6Version = $Spec.dependencies.qt6.version
+          $PrebuiltDir = Join-Path $DepsDir "obs-deps-$PrebuiltVersion-x64"
+          $Qt6Dir = Join-Path $DepsDir "obs-deps-qt6-$Qt6Version-x64"
+          $VcpkgInstalledDir = Join-Path $pwd ".deps_vendor\vcpkg_installed"
+          $VcpkgTripletDir = Join-Path $VcpkgInstalledDir "x64-windows-static-md-obs"
+          $OrtPrefix = Join-Path $pwd ".deps_vendor\ort_x64-prefix"
+          $PrefixPath = @($DepsDir, $PrebuiltDir, $Qt6Dir, $VcpkgTripletDir, $OrtPrefix) -join ";"
+          $VcpkgToolchain = Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"
+
+          $CmakeArgs = @(
+            "-S", ".",
+            "-B", "build_x64",
+            "-G", "Visual Studio 17 2022",
+            "-A", "x64",
+            "-DCMAKE_INSTALL_PREFIX=$pwd\_install",
+            "-DCMAKE_PREFIX_PATH=$PrefixPath",
+            "-DCMAKE_TOOLCHAIN_FILE=$VcpkgToolchain",
+            "-DVCPKG_INSTALLED_DIR=$VcpkgInstalledDir",
+            "-DVCPKG_TARGET_TRIPLET=x64-windows-static-md-obs",
+            "-DBUILD_TESTING=ON"
+          )
+
+          cmake @CmakeArgs
 
       - name: Build (Windows x64)
         shell: pwsh
@@ -276,7 +321,20 @@ jobs:
 
           . $env:CLEAN_PWSH_ENV
 
-          cmake --build --preset windows-ci-x64
+          cmake --build build_x64 --config RelWithDebInfo --parallel
+
+      - name: Test (Windows x64)
+        shell: pwsh
+        env:
+          PATH: '${{ env.FILTERED_PATH }}'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          . $env:CLEAN_PWSH_ENV
+
+          ctest --test-dir build_x64 -C RelWithDebInfo --output-on-failure
 
       - name: Package (Windows x64)
         shell: pwsh

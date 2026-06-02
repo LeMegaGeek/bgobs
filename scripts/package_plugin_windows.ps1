@@ -90,6 +90,25 @@ try {
     # Copy plugin install files (preserve structure)
     Copy-Item -Path "$InstallDir\*" -Destination $TempRoot -Recurse -Force
 
+    $PluginBinDir = Join-Path $TempRoot "$PluginName\bin\64bit"
+    if (-not (Test-Path $PluginBinDir)) {
+        New-Item -ItemType Directory -Path $PluginBinDir -Force | Out-Null
+    }
+
+    $OrtPrefix = Join-Path $RootDir ".deps_vendor\ort_x64-prefix"
+    $OrtDllSearchDirs = @(
+        (Join-Path $OrtPrefix "bin"),
+        (Join-Path $OrtPrefix "lib")
+    )
+
+    foreach ($Dir in $OrtDllSearchDirs) {
+        if (Test-Path $Dir) {
+            Get-ChildItem -Path $Dir -Filter "*.dll" -File | ForEach-Object {
+                Copy-Item $_.FullName -Destination $PluginBinDir -Force
+            }
+        }
+    }
+
     # Copy scripts/windows files to root of zip
     $ScriptsWin = Join-Path $ScriptDir "windows"
     if (Test-Path $ScriptsWin) {

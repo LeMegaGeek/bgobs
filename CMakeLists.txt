@@ -21,6 +21,11 @@ endblock()
 
 project(obs-backgroundremoval VERSION "${PLUGIN_VERSION}" LANGUAGES C CXX)
 
+if(MSVC)
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/common" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows")
+  include(defaults)
+endif()
+
 block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OS_LINUX_DETECTED)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(EXISTS "/etc/os-release")
@@ -58,6 +63,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_CXX_EXTENSIONS FALSE)
 set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
+
+if(MSVC)
+  include(compilerconfig)
+  include(helpers)
+endif()
 
 if(MSVC)
   add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -332,6 +342,7 @@ if(EXISTS \"\${BUNDLE_PATH}\")
 endif()"
   )
 elseif(MSVC)
+  set_target_properties_plugin(${CMAKE_PROJECT_NAME})
 elseif(OS_LINUX MATCHES "(Debian|Ubuntu)")
   set(OBS_PLUGIN_DATA_DIR "${CMAKE_INSTALL_DATAROOTDIR}/obs/obs-plugins/${CMAKE_PROJECT_NAME}")
   set(OBS_PLUGIN_DOC_DIR "${CMAKE_INSTALL_DATAROOTDIR}/doc/${CMAKE_PROJECT_NAME}")
