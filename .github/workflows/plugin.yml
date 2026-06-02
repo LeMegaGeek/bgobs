@@ -11,11 +11,7 @@ name: Plugin CI
 # date: 2026-05-28
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-    tags: ['*']
+  workflow_dispatch:
 
 permissions: {}
 

@@ -11,12 +11,7 @@
 name: Scripts CI
 
 on:
-  pull_request:
-    branches: [main]
-  merge_group:
-  push:
-    branches: [main]
-    tags: ['*']
+  workflow_dispatch:
 
 permissions: {}
 

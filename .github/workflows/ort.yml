@@ -9,13 +9,6 @@ name: ORT CI
 # date: 2026-05-28
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-    tags: ["*"]
-  schedule:
-    - cron: 17 4 * * *
   workflow_dispatch:
 
 concurrency:
