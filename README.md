@@ -1,133 +1,152 @@
-# OBS Plugin: Portrait Background Removal / Virtual Green-screen and Low-Light Enhancement
+# Comment devenir beau gosse dans OBS
 
-<div align="center">
+BGOBS, pour **Beau Gosse OBS**, est un plugin OBS Studio qui retire l'arrière-plan d'une webcam ou d'une source vidéo et aide à obtenir un contour plus propre autour du sujet.
 
-[![GitHub](https://img.shields.io/github/license/royshil/obs-backgroundremoval)](https://github.com/royshil/obs-backgroundremoval/blob/main/LICENSE)
-[![GitHub Workflow Status](https://github.com/royshil/obs-backgroundremoval/actions/workflows/push.yaml/badge.svg)](https://github.com/royshil/obs-backgroundremoval/actions/workflows/push.yaml)
-[![Total downloads](https://img.shields.io/github/downloads/royshil/obs-backgroundremoval/total)](https://github.com/royshil/obs-backgroundremoval/releases)
-![Flathub](https://img.shields.io/flathub/downloads/com.obsproject.Studio.Plugin.BackgroundRemoval?label=Flathub%20Installs)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/royshil/obs-backgroundremoval)](https://github.com/royshil/obs-backgroundremoval/releases)
+La version 0.1 est une première version de transition : le plugin affiche l'identité BGOBS, commence à isoler le traitement du masque dans un cœur Rust, mais conserve encore le nom technique `obs-backgroundremoval` pour rester compatible avec l'installation, les chemins OBS existants et les paquets hérités du projet d'origine.
 
-</div>
+## Ce que fait BGOBS
 
-A plugin for [OBS Studio](https://obsproject.com/) that allows you to replace the background in portrait images and video, as well as enhance low-light scenes.
+- ajoute un filtre OBS nommé **Rend-moi beau gosse** dans l'interface française ;
+- segmente le sujet à l'aide des modèles ONNX déjà fournis par le plugin d'origine ;
+- transforme la prédiction du modèle en masque d'arrière-plan exploitable par OBS ;
+- applique un lissage temporel pour réduire les contours instables d'une image à l'autre ;
+- conserve les fonctions existantes de remplacement de fond, flou, couleur transparente et amélioration basse lumière.
 
-<p align="center">
-  <a href="https://royshil.github.io/obs-backgroundremoval/">
-    <b>⬇️ Download & Install OBS Background Removal ⬇️</b>
-  </a>
-</p>
+L'objectif de BGOBS n'est pas seulement de retirer le fond. Le but est d'obtenir une image qui tient mieux en direct : moins de halo, moins de bord cranté, moins de masque qui tremble.
 
-Or, browse versions on [releases page](https://github.com/royshil/obs-backgroundremoval/releases).
+## Version 0.1
 
-> Not working? Please try [the Lite version (Live Background Removal Lite)](https://github.com/kaito-tokyo/live-backgroundremoval-lite) developed by one of us (Kaito Udagawa).
+Cette version pose les bases du nouveau projet :
 
-## Usage
+- nom public : **BGOBS** ;
+- nom long : **Beau Gosse OBS** ;
+- version plugin : `0.1.0` ;
+- filtre français : **Rend-moi beau gosse** ;
+- cœur Rust : `crates/bgobs-core` ;
+- pont C/Rust exposé par `crates/bgobs-core/include/bgobs_core.h` ;
+- intégration CMake pour compiler et lier le cœur Rust avec le plugin OBS.
 
-<div style="text-align:center;">
-<video src="https://github.com/royshil/obs-backgroundremoval/assets/1067855/5ba5aae2-7ea2-4c90-ad45-fba5ccde1a4e" width="320"></video>
-</div>
+Le code C++ reste majoritaire pour l'instant. Le Rust prend en charge les opérations de masque les plus faciles à isoler proprement : seuil, bord doux, inversion et lissage temporel.
 
-Check out the [usage guide page](https://royshil.github.io/obs-backgroundremoval/usage/) for usage walkthrough and recommendations.
+## Utilisation dans OBS
 
-Additional tutorial videos:
+1. Ajoute ou sélectionne une source vidéo.
+2. Ouvre les filtres de la source.
+3. Ajoute le filtre **Rend-moi beau gosse**.
+4. Choisis le modèle de segmentation adapté à ta machine.
+5. Ajuste le seuil, le bord doux et le lissage jusqu'à obtenir un contour stable.
 
-- [▶︎ Official guide to the Background Removal plugin for OBS Studio on YouTube](https://www.youtube.com/playlist?list=PLfd4SnaQQz_DVr_18OQozucYmiC56rRhy)
-- Depth of Field effect: https://youtu.be/jC3EKSpNjQk
-- Low-light enhancement: https://youtu.be/WSBLYWFrn2Q
-- Remove background from ANY object (not just human): https://youtu.be/N74VCDCToX8
+Le bon réglage dépend beaucoup de la lumière. Une lumière frontale douce donne souvent un meilleur résultat qu'un modèle plus lourd.
 
-## How to build on your system
+## Installation Linux
 
-**Platforms we support building from source officially:**
+Pour une installation utilisateur OBS, le plugin doit être disposé comme ceci :
 
-```
-git clone https://github.com/royshil/obs-backgroundremoval.git
-cd obs-backgroundremoval
-sudo ./bin/bootstrap
-./bin/setup
-./bin/build
-sudo dpkg -i release/obs-backgroundremoval-*-linux-gnu.deb
+```text
+~/.config/obs-studio/plugins/obs-backgroundremoval/
+├── bin/64bit/obs-backgroundremoval.so
+└── data/
 ```
 
-The supported platforms are:
+Les bibliothèques ONNX Runtime doivent être accessibles au chargement du plugin. Dans notre installation locale, elles sont placées dans le même dossier que le `.so` :
 
-- Debian Forky (x86_64 and arm64)
+```text
+~/.config/obs-studio/plugins/obs-backgroundremoval/bin/64bit/
+├── obs-backgroundremoval.so
+├── libonnxruntime.so
+├── libonnxruntime.so.1
+├── libonnxruntime.so.1.23.2
+└── libonnxruntime_providers_shared.so
+```
 
-We plan to add building scripts for popular platforms such as Windows, Mac, and various distributions of Linux.
+Si OBS charge encore une ancienne version installée dans `/usr/lib`, il faut remplacer le plugin système avec les droits administrateur ou retirer l'ancien paquet.
 
-## Development Documentation
+## Installation Windows PortableApps
 
-- [Background mask post-processing](docs/MASK-POST-PROCESSING.md)
-- [Local Linux OBS build](docs/LOCAL-OBS-LINUX.md)
-- [Windows PortableApps install layout](docs/WINDOWS-PORTABLEAPPS.md)
+Pour OBS PortableApps, le fichier DLL se place ici :
 
-## Introduction
+```text
+OBSPortable/
+└── App/obs-studio/obs-plugins/64bit/
+    ├── obs-backgroundremoval.dll
+    ├── onnxruntime.dll
+    └── onnxruntime_providers_shared.dll
+```
 
-This plugin is meant to make it easy to replace the background in portrait images and video.
-It is using a neural network to predict the mask of the portrait and remove the background pixels.
-It's easily composable with other OBS plugins to replace the background with e.g. an image or
-a transparent color.
+Les données du plugin se placent ici :
 
-If you like this work, which is given to you completely free of charge, please consider supporting it by sponsoring us on GitHub:
+```text
+OBSPortable/
+├── App/obs-studio/data/obs-plugins/obs-backgroundremoval/
+└── Data/obs-plugins/obs-backgroundremoval/
+```
 
-- https://github.com/sponsors/royshil
-- https://github.com/sponsors/umireon
+Le dossier `Data/obs-plugins/obs-backgroundremoval` est important avec PortableApps : il évite que les réglages et données du plugin soient perdus ou ignorés selon la configuration portable.
 
-### Support and Help
+Une fois copié, relance OBS et vérifie dans les logs que le plugin charge la version `0.1.0`.
 
-Reach out to us on [GitHub Discussions](https://github.com/royshil/obs-backgroundremoval/discussions) or the [OBS Plugins forum](https://obsproject.com/forum/resources/background-removal-portrait-segmentation.1260/) for online / immediate help.
+## Compiler
 
-If you found a bug or want to suggest a feature or improvement please open an [issue](https://github.com/royshil/obs-backgroundremoval/issues).
+Les commandes Rust utiles :
 
-If you are looking for hands-on help or private consultation please select a [sponsorship tier](https://github.com/sponsors/royshil?frequency=one-time).
+```bash
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+```
 
-### Technical Details
+Le plugin OBS se compile ensuite avec CMake. Exemple avec un dossier de build local déjà configuré :
 
-GPU support:
+```bash
+cmake --build build/local-obs --target obs-backgroundremoval
+ctest --test-dir build/local-obs --output-on-failure -R mask-post-processing
+```
 
-- On Windows, we plan to support WinML acceleration.
-- On Mac we support CoreML for acceleration, which is efficient on Apple Silicon. **Note:** This plugin does not support cross-architecture translation (Rosetta2). Intel binaries on Apple Silicon or Apple Silicon binaries on Intel will crash.
-- On Linux CUDA, ROCM (deprecated in ONNX Runtime 1.23.0), and MIGraphX are supported if this plugin is built from source. Ensure your ONNX Runtime installation has CUDA, ROCM, or MIGraphX support. For AMD GPUs, MIGraphX is recommended as ROCM was removed from ONNX Runtime starting with version 1.23.0.
-- The goal of this plugin is to be available for everyone on every system, even if they don't own a GPU.
+Sur Windows, la distribution est produite par le workflow GitHub Actions **Windows Package**.
 
-Number of CPU threads is controllable through the UI settings. A 2-thread setting works best.
+## Organisation du projet
 
-The pretrained model weights used for portrait foreground segmentation are taken from:
+```text
+crates/bgobs-core/                  Cœur Rust du traitement de masque
+crates/bgobs-core/include/          Interface C publique du cœur Rust
+src/background/                     Intégration OBS et post-traitement C++
+data/locale/                        Libellés affichés dans OBS
+data/models/                        Modèles ONNX et licences associées
+docs/                               Notes techniques et installation
+```
 
-- https://github.com/anilsathyan7/Portrait-Segmentation/tree/master/SINet
-- https://github.com/PaddlePaddle/PaddleSeg/tree/release/2.7/contrib/PP-HumanSeg
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/082_MediaPipe_Meet_Segmentation
-- https://github.com/PeterL1n/RobustVideoMatting
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/384_TCMonoDepth and https://github.com/yu-li/TCMonoDepth
+La frontière actuelle est volontairement simple : le C++ reste responsable d'OBS, des textures, des propriétés et du cycle de vie plugin ; Rust gère progressivement les calculs purs, testables sans OBS.
 
-Image enhancement (low light) models are taken from:
+## Qualité
 
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/213_TBEFN
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/372_URetinex-Net
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/370_Semantic-Guided-Low-Light-Image-Enhancement
+Avant de pousser une modification, vérifier au minimum :
 
-Some more information about how I built it: https://www.morethantechnical.com/2021/04/15/obs-plugin-for-portrait-background-removal-with-onnx-sinet-model/ and https://www.morethantechnical.com/2023/05/20/building-an-obs-background-removal-plugin-a-walkthrough/
+```bash
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+.venv/bin/reuse lint
+.venv/bin/gersemi --check CMakeLists.txt
+```
 
-### Code Walkthrough
+Pour les changements C ou C++ :
 
-This video on YouTube will take you through the major parts of the code and explain them.
+```bash
+.venv/bin/clang-format --dry-run --Werror src/background/mask-post-processing.cpp src/plugin-support.c
+```
 
-<div align="center">
-  <a href="https://youtu.be/iFQtcJg0Wsk" target="_blank">
-    <img width="50%" src="https://img.youtube.com/vi/iFQtcJg0Wsk/maxresdefault.jpg"/>
-  </a>
-</div>
+## Origine et licence
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=royshil/obs-backgroundremoval&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=royshil/obs-backgroundremoval&type=Date" />
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=royshil/obs-backgroundremoval&type=Date" />
-</picture>
+BGOBS est dérivé de **OBS Background Removal** de Roy Shilkrot et Kaito Udagawa.
 
----
+Le projet reste distribué sous licence **GPL-3.0-or-later**. Les modèles embarqués ont leurs propres licences dans `data/models/*.license` et doivent être conservés avec les fichiers correspondants.
 
-> SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>  
-> SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>  
->
-> SPDX-License-Identifier: GPL-3.0-or-later  
+Les contributions destinées au projet d'origine doivent respecter les règles de contribution upstream. Pour BGOBS, l'objectif est de garder un historique propre, des changements relisibles et des tests reproductibles.
+
+<!--
+SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
+SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
+
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
