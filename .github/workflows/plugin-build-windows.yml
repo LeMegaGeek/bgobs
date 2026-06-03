@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 
 # SPDX-FileCopyrightText: 2026 Kaito Udagawa <umireon@kaito.tokyo>
+# SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -62,7 +63,7 @@ jobs:
 
     env:
       CLEAN_PWSH_ENV: '${{ github.workspace }}\.github\scripts\clean-env-windows.ps1'
-      FILTERED_PATH: 'C:\ProgramData\chocolatey\bin;C:\Program Files\CMake\bin;C:\Program Files\Git\cmd;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows\System32;C:\Windows'
+      FILTERED_PATH: 'C:\Users\runneradmin\.cargo\bin;C:\ProgramData\chocolatey\bin;C:\Program Files\CMake\bin;C:\Program Files\Git\cmd;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows\System32;C:\Windows'
       ORT_CCACHE_DIR: '${{ github.workspace }}\.ort_ccache'
       ROOT_VCPKG_ROOT: '${{ github.workspace }}\vcpkg'
 
