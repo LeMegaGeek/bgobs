@@ -25,8 +25,10 @@ Additional provider DLLs may be needed if the Windows build enables GPU executio
 
 ## PortableApps Location
 
-Close OBS first. Find the directory that contains `OBS-StudioPortable.exe`, then copy the complete
-`obs-backgroundremoval` plugin folder into:
+Close OBS first. If an older version was installed before, run `remove-old-installation.bat` from the ZIP before
+copying the new folder. When prompted, enter the directory that contains `OBS-StudioPortable.exe`.
+
+Then copy the complete `obs-backgroundremoval` plugin folder into:
 
 ```text
 <OBS-StudioPortable>\Data\obs-studio\plugins\
@@ -60,6 +62,9 @@ supported Windows plugin location.
 - If the filters are not listed, confirm that OBS is 64-bit and that `obs-backgroundremoval.dll` is a Windows x64 DLL.
 - If OBS reports missing ONNX Runtime libraries, put the ONNX Runtime DLLs beside `obs-backgroundremoval.dll`.
 - If OBS reports missing model files, confirm that the bundle contains `obs-backgroundremoval\data\models`.
+- If OBS still reports version `1.3.x`, it is loading an older DLL from another folder. Open the latest log under
+  `<OBS-StudioPortable>\Data\obs-studio\logs\`, search for `obs-backgroundremoval`, delete the old path shown there,
+  and then copy the new `obs-backgroundremoval` folder again.
 - Restart OBS after replacing plugin files.
 
 ---

@@ -4,74 +4,74 @@ REM
 REM SPDX-License-Identifier: GPL-3.0-or-later
 
 @echo off
-REM Remove old installation of obs-backgroundremoval plugin
-setlocal
+setlocal EnableExtensions
 
-set PLUGIN_DIR=C:\ProgramData\obs-studio\plugins\obs-backgroundremoval
-set DLL_FILE=C:\Program Files\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll
-set PDB_FILE=C:\Program Files\obs-studio\obs-plugins\64bit\obs-backgroundremoval.pdb
-set DATA_DIR=C:\Program Files\obs-studio\data\obs-plugins\obs-backgroundremoval
+echo Remove old obs-backgroundremoval installations
+echo ------------------------------------------------
+echo Close OBS Studio before continuing.
+echo.
 
-REM Remove plugin directory (ProgramData)
-if exist "%PLUGIN_DIR%" (
-    echo Removing "%PLUGIN_DIR%" ...
-    rmdir /s /q "%PLUGIN_DIR%"
-    if exist "%PLUGIN_DIR%" (
-        echo Failed to remove "%PLUGIN_DIR%".
-    ) else (
-        echo Successfully removed "%PLUGIN_DIR%".
-    )
-) else (
-    echo "%PLUGIN_DIR%" does not exist.
+set "PORTABLE_ROOT=%~1"
+if "%PORTABLE_ROOT%"=="" if exist "%CD%\OBS-StudioPortable.exe" set "PORTABLE_ROOT=%CD%"
+
+if "%PORTABLE_ROOT%"=="" (
+    echo Optional: enter the folder that contains OBS-StudioPortable.exe.
+    echo Leave empty to only clean standard OBS Studio locations.
+    set /p "PORTABLE_ROOT=OBS-StudioPortable folder: "
 )
 
-REM Remove DLL file
-if exist "%DLL_FILE%" (
-    echo Removing "%DLL_FILE%" ...
-    del /f /q "%DLL_FILE%"
-    if exist "%DLL_FILE%" (
-        echo Failed to remove "%DLL_FILE%".
-    ) else (
-        echo Successfully removed "%DLL_FILE%".
-    )
-) else (
-    echo "%DLL_FILE%" does not exist.
-)
-
-REM Remove PDB file
-if exist "%PDB_FILE%" (
-    echo Removing "%PDB_FILE%" ...
-    del /f /q "%PDB_FILE%"
-    if exist "%PDB_FILE%" (
-        echo Failed to remove "%PDB_FILE%".
-    ) else (
-        echo Successfully removed "%PDB_FILE%".
-    )
-) else (
-    echo "%PDB_FILE%" does not exist.
-)
-
-REM Remove data directory
-if exist "%DATA_DIR%" (
-    echo Removing "%DATA_DIR%" ...
-    rmdir /s /q "%DATA_DIR%"
-    if exist "%DATA_DIR%" (
-        echo Failed to remove "%DATA_DIR%".
-        exit /b 1
-    ) else (
-        echo Successfully removed "%DATA_DIR%".
-    )
-) else (
-    echo "%DATA_DIR%" does not exist.
+if not "%PORTABLE_ROOT%"=="" (
+    set "PORTABLE_ROOT=%PORTABLE_ROOT:"=%"
+    echo.
+    echo Cleaning PortableApps OBS locations under:
+    echo   %PORTABLE_ROOT%
+    call :RemoveDir "%PORTABLE_ROOT%\Data\obs-studio\plugins\obs-backgroundremoval"
+    call :RemoveFile "%PORTABLE_ROOT%\Data\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll"
+    call :RemoveFile "%PORTABLE_ROOT%\Data\obs-studio\obs-plugins\64bit\obs-backgroundremoval.pdb"
+    call :RemoveDir "%PORTABLE_ROOT%\Data\obs-studio\data\obs-plugins\obs-backgroundremoval"
+    call :RemoveFile "%PORTABLE_ROOT%\App\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll"
+    call :RemoveFile "%PORTABLE_ROOT%\App\obs-studio\obs-plugins\64bit\obs-backgroundremoval.pdb"
+    call :RemoveDir "%PORTABLE_ROOT%\App\obs-studio\data\obs-plugins\obs-backgroundremoval"
 )
 
 echo.
-echo ------------------------------------------------------------
-echo If you have installed OBS Studio in a different location,
-echo please manually remove the corresponding plugin files and
-echo directories listed above from that location.
-echo ------------------------------------------------------------
+echo Cleaning standard OBS Studio locations.
+call :RemoveDir "%ProgramData%\obs-studio\plugins\obs-backgroundremoval"
+call :RemoveFile "%ProgramFiles%\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll"
+call :RemoveFile "%ProgramFiles%\obs-studio\obs-plugins\64bit\obs-backgroundremoval.pdb"
+call :RemoveDir "%ProgramFiles%\obs-studio\data\obs-plugins\obs-backgroundremoval"
 
+if not "%ProgramFiles(x86)%"=="" (
+    call :RemoveFile "%ProgramFiles(x86)%\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll"
+    call :RemoveFile "%ProgramFiles(x86)%\obs-studio\obs-plugins\64bit\obs-backgroundremoval.pdb"
+    call :RemoveDir "%ProgramFiles(x86)%\obs-studio\data\obs-plugins\obs-backgroundremoval"
+)
+
+echo.
+echo Done. Install the new package by copying the obs-backgroundremoval folder
+echo from this ZIP into:
+echo   ^<OBS-StudioPortable^>\Data\obs-studio\plugins\
+echo.
+echo If OBS still reports version 1.3.x, open the latest OBS log and search
+echo for obs-backgroundremoval to find the old DLL path that is still loaded.
+echo.
 pause
+exit /b 0
 
-endlocal
+:RemoveDir
+if exist "%~1" (
+    echo Removing directory "%~1"
+    rmdir /s /q "%~1"
+) else (
+    echo Not found: "%~1"
+)
+exit /b 0
+
+:RemoveFile
+if exist "%~1" (
+    echo Removing file "%~1"
+    del /f /q "%~1"
+) else (
+    echo Not found: "%~1"
+)
+exit /b 0

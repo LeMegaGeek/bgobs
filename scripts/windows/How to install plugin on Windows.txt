@@ -6,30 +6,55 @@ PortableApps OBS Studio
 
 1. Close OBS Studio.
 
-2. Find the folder that contains OBS-StudioPortable.exe.
+2. Remove older installations before copying the new one.
+
+   Run:
+
+     remove-old-installation.bat
+
+   When prompted, enter the folder that contains OBS-StudioPortable.exe.
 
    Example:
 
      D:\PortableApps\OBS-StudioPortable\
 
-3. Open or create this folder:
+   This matters if OBS still loads an old 1.3.x DLL from a legacy
+   obs-plugins\64bit folder.
+
+3. Find the folder that contains OBS-StudioPortable.exe.
+
+   Example:
+
+     D:\PortableApps\OBS-StudioPortable\
+
+4. Open or create this folder:
 
      D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\
 
-4. Copy the `obs-backgroundremoval` folder from this ZIP into that `plugins`
+5. Copy the `obs-backgroundremoval` folder from this ZIP into that `plugins`
    folder.
 
-5. The final layout should include:
+6. The final layout should include:
 
      D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\bin\64bit\obs-backgroundremoval.dll
      D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\models\
      D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\locale\
      D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\effects\
 
-6. Restart OBS Studio and check the video source filter list for:
+7. Restart OBS Studio and check the video source filter list for:
 
      Background Removal
      Low-Light Enhancement
+
+8. If OBS still reports version 1.3.x, open the latest OBS log under:
+
+     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\logs\
+
+   Search for:
+
+     obs-backgroundremoval
+
+   Delete the old path shown in the log, then copy the new folder again.
 
 
 Standard OBS Studio
