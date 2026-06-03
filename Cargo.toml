@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[workspace]
+members = ["crates/bgobs-core"]
+resolver = "2"
+

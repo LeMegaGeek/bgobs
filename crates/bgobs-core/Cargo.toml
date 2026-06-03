@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[package]
+name = "bgobs-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "GPL-3.0-or-later"
+description = "Core processing algorithms for BGOBS, independent of OBS."
+repository = "https://github.com/LeMegaGeek/bgobs"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]

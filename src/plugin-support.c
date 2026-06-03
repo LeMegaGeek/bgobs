@@ -1,6 +1,7 @@
 /*
  * SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
  * SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+ * SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -10,7 +11,7 @@
 extern void blogva(int log_level, const char *format, va_list args);
 
 const char *PLUGIN_NAME = "obs-backgroundremoval";
-const char *PLUGIN_VERSION = "1.4.0";
+const char *PLUGIN_VERSION = "0.1.0";
 
 void obs_log(int log_level, const char *format, ...)
 {

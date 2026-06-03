@@ -37,9 +37,9 @@
     }
   },
   "name": "obs-backgroundremoval",
-  "displayName": "OBS Background Removal",
-  "version": "1.4.0",
+  "displayName": "BGOBS",
+  "version": "0.1.0",
   "author": "Roy Shilkrot",
-  "website": "https://royshil.github.io/obs-backgroundremoval/",
+  "website": "https://github.com/LeMegaGeek/bgobs",
   "email": "roy.shil@gmail.com"
 }

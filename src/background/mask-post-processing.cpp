@@ -6,6 +6,8 @@
 
 #include "mask-post-processing.hpp"
 
+#include <bgobs_core.h>
+
 #include <opencv2/core/version.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -81,41 +83,33 @@ void cleanForegroundHoles(cv::Mat &backgroundMask, float foregroundCleanup)
 	cv::morphologyEx(backgroundMask, backgroundMask, cv::MORPH_OPEN, kernel);
 }
 
-cv::Mat makeHardBackgroundMask(const cv::Mat &foregroundMask, float threshold)
+cv::Mat makeBackgroundMaskWithRust(const cv::Mat &foregroundMask, bool enableThreshold, float threshold,
+				   float edgeSoftness)
 {
-	const uint8_t thresholdValue = (uint8_t)(std::clamp(threshold, 0.0f, 1.0f) * 255.0f);
-	return foregroundMask < thresholdValue;
+	CV_Assert(foregroundMask.type() == CV_8UC1);
+
+	const cv::Mat foregroundMaskContinuous = foregroundMask.isContinuous() ? foregroundMask
+									       : foregroundMask.clone();
+	cv::Mat backgroundMask(foregroundMaskContinuous.size(), CV_8UC1);
+	const size_t maskSize = foregroundMaskContinuous.total();
+
+	const bgobs_mask_post_processing_settings rustSettings = {
+		(uint8_t)(enableThreshold ? 1 : 0),
+		threshold,
+		edgeSoftness,
+	};
+
+	const bgobs_mask_status status =
+		bgobs_write_background_mask_from_foreground(foregroundMaskContinuous.ptr<uint8_t>(), maskSize,
+							    rustSettings, backgroundMask.ptr<uint8_t>(), maskSize);
+	CV_Assert(status == BGOBS_MASK_STATUS_OK);
+
+	return backgroundMask;
 }
 
 cv::Mat makeSoftBackgroundMask(const cv::Mat &foregroundMask, float threshold, float edgeSoftness)
 {
-	const float clampedThreshold = std::clamp(threshold, 0.0f, 1.0f);
-	const float clampedSoftness = std::clamp(edgeSoftness, 0.0f, 1.0f);
-
-	if (clampedSoftness <= 0.0f) {
-		return makeHardBackgroundMask(foregroundMask, clampedThreshold);
-	}
-
-	const float lower = std::clamp(clampedThreshold - clampedSoftness * 0.5f, 0.0f, 1.0f);
-	const float upper = std::clamp(clampedThreshold + clampedSoftness * 0.5f, 0.0f, 1.0f);
-	if (upper <= lower) {
-		return makeHardBackgroundMask(foregroundMask, clampedThreshold);
-	}
-
-	cv::Mat foregroundFloat;
-	foregroundMask.convertTo(foregroundFloat, CV_32F, 1.0 / 255.0);
-
-	cv::Mat foregroundAlpha = (foregroundFloat - lower) / (upper - lower);
-	cv::max(foregroundAlpha, 0.0, foregroundAlpha);
-	cv::min(foregroundAlpha, 1.0, foregroundAlpha);
-
-	cv::Mat smoothStepScale = 3.0 - 2.0 * foregroundAlpha;
-	foregroundAlpha = foregroundAlpha.mul(foregroundAlpha).mul(smoothStepScale);
-
-	cv::Mat backgroundMask;
-	cv::Mat backgroundFloat = 1.0 - foregroundAlpha;
-	backgroundFloat.convertTo(backgroundMask, CV_8U, 255.0);
-	return backgroundMask;
+	return makeBackgroundMaskWithRust(foregroundMask, true, threshold, edgeSoftness);
 }
 
 void filterSmallBackgroundComponents(cv::Mat &backgroundMask, float contourFilter)
@@ -178,7 +172,8 @@ cv::Mat postProcessForegroundMask(const cv::Mat &foregroundMask, const cv::Size 
 				      cv::Size(kernelSize, kernelSize));
 		}
 	} else {
-		cv::subtract(cv::Scalar(255), resizedForegroundMask, backgroundMask);
+		backgroundMask = makeBackgroundMaskWithRust(resizedForegroundMask, false, settings.threshold,
+							    settings.edgeSoftness);
 	}
 
 	return backgroundMask;
@@ -198,24 +193,23 @@ cv::Mat smoothTemporalBackgroundMask(const cv::Mat &currentBackgroundMask, const
 		return currentBackgroundMask.clone();
 	}
 
-	const float recoverForegroundFactor =
-		settings.protectForeground ? std::clamp(0.65f + 0.35f * factor, factor, 0.98f) : factor;
-	const float loseForegroundFactor = settings.protectForeground ? std::clamp(0.35f * factor, 0.05f, factor)
-								      : factor;
+	const cv::Mat currentBackgroundMaskContinuous =
+		currentBackgroundMask.isContinuous() ? currentBackgroundMask : currentBackgroundMask.clone();
+	const cv::Mat previousBackgroundMaskContinuous =
+		previousBackgroundMask.isContinuous() ? previousBackgroundMask : previousBackgroundMask.clone();
+	cv::Mat smoothedMask(currentBackgroundMaskContinuous.size(), CV_8UC1);
+	const size_t maskSize = currentBackgroundMaskContinuous.total();
 
-	cv::Mat smoothedMask(currentBackgroundMask.size(), currentBackgroundMask.type());
-	for (int row = 0; row < currentBackgroundMask.rows; row++) {
-		const uint8_t *current = currentBackgroundMask.ptr<uint8_t>(row);
-		const uint8_t *previous = previousBackgroundMask.ptr<uint8_t>(row);
-		uint8_t *smoothed = smoothedMask.ptr<uint8_t>(row);
-		for (int col = 0; col < currentBackgroundMask.cols; col++) {
-			const float updateFactor = current[col] > previous[col] ? loseForegroundFactor
-										: recoverForegroundFactor;
-			const float blended =
-				(float)current[col] * updateFactor + (float)previous[col] * (1.0f - updateFactor);
-			smoothed[col] = (uint8_t)std::clamp((int)std::lround(blended), 0, 255);
-		}
-	}
+	const bgobs_temporal_mask_smoothing_settings rustSettings = {
+		factor,
+		(uint8_t)(settings.protectForeground ? 1 : 0),
+	};
+
+	const bgobs_mask_status status =
+		bgobs_write_smooth_temporal_background_mask(currentBackgroundMaskContinuous.ptr<uint8_t>(), maskSize,
+							    previousBackgroundMaskContinuous.ptr<uint8_t>(), maskSize,
+							    rustSettings, smoothedMask.ptr<uint8_t>(), maskSize);
+	CV_Assert(status == BGOBS_MASK_STATUS_OK);
 
 	return smoothedMask;
 }

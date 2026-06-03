@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.28)
 
 ### Options
 set(PLUGIN_NAME "obs-backgroundremoval" CACHE STRING "Name of plugin")
-set(PLUGIN_DISPLAY_NAME "OBS Background Removal" CACHE STRING "Display name of plugin")
+set(PLUGIN_DISPLAY_NAME "BGOBS" CACHE STRING "Display name of plugin")
 set(PLUGIN_AUTHOR "Roy Shilkrot" CACHE STRING "Author of plugin")
 set(PLUGIN_EMAIL "roy.shil@gmail.com" CACHE STRING "Author email of plugin")
 set(PLUGIN_BUILD_NUMBER "1" CACHE STRING "Build number in plugin metadata")
@@ -193,6 +193,75 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIM
   endif()
 endblock()
 
+### Rust core
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+
+set(BGOBS_CORE_CARGO_PROFILE "release" CACHE STRING "Cargo profile used to build bgobs-core")
+set_property(CACHE BGOBS_CORE_CARGO_PROFILE PROPERTY STRINGS debug release)
+
+if(NOT BGOBS_CORE_CARGO_PROFILE MATCHES "^(debug|release)$")
+  message(FATAL_ERROR "BGOBS_CORE_CARGO_PROFILE must be either debug or release.")
+endif()
+
+if(BGOBS_CORE_CARGO_PROFILE STREQUAL "release")
+  set(BGOBS_CORE_CARGO_BUILD_ARGS --release)
+else()
+  set(BGOBS_CORE_CARGO_BUILD_ARGS)
+endif()
+
+set(BGOBS_CORE_CRATE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/crates/bgobs-core")
+set(BGOBS_CORE_CARGO_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cargo")
+set(
+  BGOBS_CORE_STATIC_LIBRARY
+  "${BGOBS_CORE_CARGO_TARGET_DIR}/${BGOBS_CORE_CARGO_PROFILE}/${CMAKE_STATIC_LIBRARY_PREFIX}bgobs_core${CMAKE_STATIC_LIBRARY_SUFFIX}"
+)
+
+file(GLOB_RECURSE BGOBS_CORE_RUST_SOURCES CONFIGURE_DEPENDS "${BGOBS_CORE_CRATE_DIR}/src/*.rs")
+
+add_custom_command(
+  OUTPUT "${BGOBS_CORE_STATIC_LIBRARY}"
+  COMMAND
+    "${CARGO_EXECUTABLE}" build --manifest-path "${BGOBS_CORE_CRATE_DIR}/Cargo.toml" --target-dir
+    "${BGOBS_CORE_CARGO_TARGET_DIR}" ${BGOBS_CORE_CARGO_BUILD_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.lock"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml"
+    "${BGOBS_CORE_CRATE_DIR}/Cargo.toml"
+    ${BGOBS_CORE_RUST_SOURCES}
+  COMMENT "Building Rust crate bgobs-core"
+  VERBATIM
+)
+
+add_custom_target(bgobs-core-rust DEPENDS "${BGOBS_CORE_STATIC_LIBRARY}")
+add_library(bgobs_core INTERFACE)
+add_dependencies(bgobs_core bgobs-core-rust)
+target_include_directories(bgobs_core INTERFACE "${BGOBS_CORE_CRATE_DIR}/include")
+
+set(BGOBS_CORE_NATIVE_LIBRARIES)
+if(WIN32)
+  list(
+    APPEND BGOBS_CORE_NATIVE_LIBRARIES
+    advapi32
+    bcrypt
+    ntdll
+    userenv
+    ws2_32
+  )
+elseif(UNIX AND NOT APPLE)
+  find_package(Threads REQUIRED)
+  list(
+    APPEND BGOBS_CORE_NATIVE_LIBRARIES
+    Threads::Threads
+    ${CMAKE_DL_LIBS}
+    m
+    rt
+    util
+  )
+endif()
+
+target_link_libraries(bgobs_core INTERFACE "${BGOBS_CORE_STATIC_LIBRARY}" ${BGOBS_CORE_NATIVE_LIBRARIES})
+
 ### Plugin main
 set(
   BACKGROUND_FILTER_SOURCES
@@ -234,6 +303,7 @@ target_link_libraries(
     CurlClient
     OpenCV::opencv_core
     OpenCV::opencv_imgproc
+    bgobs_core
 )
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
@@ -249,7 +319,7 @@ if(BUILD_TESTING)
   add_executable(mask-post-processing-test)
   target_sources(mask-post-processing-test PRIVATE ${MASK_POST_PROCESSING_TEST_SOURCES})
   target_include_directories(mask-post-processing-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-  target_link_libraries(mask-post-processing-test PRIVATE OpenCV::opencv_core OpenCV::opencv_imgproc)
+  target_link_libraries(mask-post-processing-test PRIVATE OpenCV::opencv_core OpenCV::opencv_imgproc bgobs_core)
   add_test(NAME mask-post-processing COMMAND mask-post-processing-test)
 endif()
 
