@@ -1,6 +1,7 @@
 /*
  * SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
  * SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+ * SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -30,11 +31,9 @@ const char *const EFFECT_PATH = "effects/mask_alpha_filter.effect";
 const char *const KAWASE_BLUR_EFFECT_PATH = "effects/kawase_blur.effect";
 const char *const BLEND_EFFECT_PATH = "effects/blend_images.effect";
 
-const char *const PLUGIN_INFO_TEMPLATE =
-	"<a href=\"https://github.com/royshil/obs-backgroundremoval/\">Background Removal</a> (%1) by "
-	"<a href=\"https://github.com/royshil\">Roy Shilkrot</a> ❤️ "
-	"<a href=\"https://github.com/sponsors/royshil\">Support & Follow</a>";
+const char *const PLUGIN_INFO_TEMPLATE = "<a href=\"https://github.com/LeMegaGeek/bgobs/\">BGOBS</a> (%1) by "
+					 "<a href=\"https://github.com/LeMegaGeek\">LeMegaGeek</a>";
 const char *const PLUGIN_INFO_TEMPLATE_UPDATE_AVAILABLE =
-	"<center><a href=\"https://github.com/royshil/obs-backgroundremoval/releases\">🚀 Update available! (%1)</a></center>";
+	"<center><a href=\"https://github.com/LeMegaGeek/bgobs/releases\">Update available! (%1)</a></center>";
 
 #endif /* CONSTS_H */
