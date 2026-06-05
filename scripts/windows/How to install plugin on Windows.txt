@@ -27,19 +27,30 @@ PortableApps OBS Studio
 
      D:\PortableApps\OBS-StudioPortable\
 
-4. Open or create this folder:
+4. Copy the DLL files from:
 
-     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\
+     obs-backgroundremoval\bin\64bit\
 
-5. Copy the `obs-backgroundremoval` folder from this ZIP into that `plugins`
-   folder.
+   into:
+
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\
+
+5. Copy the contents of:
+
+     obs-backgroundremoval\data\
+
+   into both of these folders:
+
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\obs-backgroundremoval\
+     D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\obs-backgroundremoval\
 
 6. The final layout should include:
 
-     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\bin\64bit\obs-backgroundremoval.dll
-     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\models\
-     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\locale\
-     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\plugins\obs-backgroundremoval\data\effects\
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\obs-backgroundremoval\models\
+     D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\obs-backgroundremoval\models\
 
 7. Restart OBS Studio and check the video source filter list for:
 
@@ -48,13 +59,13 @@ PortableApps OBS Studio
 
 8. If OBS still reports version 1.3.x, open the latest OBS log under:
 
-     D:\PortableApps\OBS-StudioPortable\Data\obs-studio\logs\
+     D:\PortableApps\OBS-StudioPortable\Data\config\obs-studio\logs\
 
    Search for:
 
      obs-backgroundremoval
 
-   Delete the old path shown in the log, then copy the new folder again.
+   Delete the old path shown in the log, then copy the new DLL and data again.
 
 
 Standard OBS Studio

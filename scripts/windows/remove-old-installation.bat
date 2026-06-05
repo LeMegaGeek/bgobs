@@ -29,6 +29,8 @@ if not "%PORTABLE_ROOT%"=="" (
     call :RemoveFile "%PORTABLE_ROOT%\Data\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll"
     call :RemoveFile "%PORTABLE_ROOT%\Data\obs-studio\obs-plugins\64bit\obs-backgroundremoval.pdb"
     call :RemoveDir "%PORTABLE_ROOT%\Data\obs-studio\data\obs-plugins\obs-backgroundremoval"
+    call :RemoveDir "%PORTABLE_ROOT%\Data\config\obs-studio\plugins\obs-backgroundremoval"
+    call :RemoveDir "%PORTABLE_ROOT%\Data\obs-plugins\obs-backgroundremoval"
     call :RemoveFile "%PORTABLE_ROOT%\App\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll"
     call :RemoveFile "%PORTABLE_ROOT%\App\obs-studio\obs-plugins\64bit\obs-backgroundremoval.pdb"
     call :RemoveDir "%PORTABLE_ROOT%\App\obs-studio\data\obs-plugins\obs-backgroundremoval"
@@ -48,9 +50,14 @@ if not "%ProgramFiles(x86)%"=="" (
 )
 
 echo.
-echo Done. Install the new package by copying the obs-backgroundremoval folder
-echo from this ZIP into:
-echo   ^<OBS-StudioPortable^>\Data\obs-studio\plugins\
+echo Done. Install the new package by copying:
+echo   obs-backgroundremoval\bin\64bit\*.dll
+echo into:
+echo   ^<OBS-StudioPortable^>\App\obs-studio\obs-plugins\64bit\
+echo.
+echo Then copy obs-backgroundremoval\data\* into:
+echo   ^<OBS-StudioPortable^>\App\obs-studio\data\obs-plugins\obs-backgroundremoval\
+echo   ^<OBS-StudioPortable^>\Data\obs-plugins\obs-backgroundremoval\
 echo.
 echo If OBS still reports version 1.3.x, open the latest OBS log and search
 echo for obs-backgroundremoval to find the old DLL path that is still loaded.

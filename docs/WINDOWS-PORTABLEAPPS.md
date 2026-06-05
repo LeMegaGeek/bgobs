@@ -28,19 +28,27 @@ Additional provider DLLs may be needed if the Windows build enables GPU executio
 Close OBS first. If an older version was installed before, run `remove-old-installation.bat` from the ZIP before
 copying the new folder. When prompted, enter the directory that contains `OBS-StudioPortable.exe`.
 
-Then copy the complete `obs-backgroundremoval` plugin folder into:
+PortableApps OBS in this tree loads plugins from the embedded OBS layout. Copy the DLLs from the ZIP into:
 
 ```text
-<OBS-StudioPortable>\Data\obs-studio\plugins\
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\
 ```
 
-The final layout should look like this:
+The plugin data must be copied into both data locations used by this PortableApps layout:
 
 ```text
-<OBS-StudioPortable>\Data\obs-studio\plugins\obs-backgroundremoval\bin\64bit\obs-backgroundremoval.dll
-<OBS-StudioPortable>\Data\obs-studio\plugins\obs-backgroundremoval\data\models\mediapipe.with_runtime_opt.ort
-<OBS-StudioPortable>\Data\obs-studio\plugins\obs-backgroundremoval\data\locale\en-US.ini
-<OBS-StudioPortable>\Data\obs-studio\plugins\obs-backgroundremoval\data\effects\mask_alpha_filter.effect
+<OBS-StudioPortable>\App\obs-studio\data\obs-plugins\obs-backgroundremoval\
+<OBS-StudioPortable>\Data\obs-plugins\obs-backgroundremoval\
+```
+
+The final layout should include:
+
+```text
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
+<OBS-StudioPortable>\App\obs-studio\data\obs-plugins\obs-backgroundremoval\models\mediapipe.with_runtime_opt.ort
+<OBS-StudioPortable>\Data\obs-plugins\obs-backgroundremoval\models\mediapipe.with_runtime_opt.ort
 ```
 
 Restart OBS after copying the files. The Background Removal and Low-Light Enhancement filters should appear in a video
@@ -63,8 +71,10 @@ supported Windows plugin location.
 - If OBS reports missing ONNX Runtime libraries, put the ONNX Runtime DLLs beside `obs-backgroundremoval.dll`.
 - If OBS reports missing model files, confirm that the bundle contains `obs-backgroundremoval\data\models`.
 - If OBS still reports version `1.3.x`, it is loading an older DLL from another folder. Open the latest log under
-  `<OBS-StudioPortable>\Data\obs-studio\logs\`, search for `obs-backgroundremoval`, delete the old path shown there,
-  and then copy the new `obs-backgroundremoval` folder again.
+  `<OBS-StudioPortable>\Data\config\obs-studio\logs\`, search for `obs-backgroundremoval`, delete the old path shown
+  there, and then copy the new DLL and data folders again.
+- If a scene still shows `Suppression de l'arrière-plan`, rename that existing filter instance in OBS. Filter instance
+  names are saved in scene collections and do not automatically follow the plugin locale.
 - Restart OBS after replacing plugin files.
 
 ---

@@ -63,18 +63,19 @@ Si OBS charge encore une ancienne version installée dans `/usr/lib`, il faut re
 
 ## Installation Windows PortableApps
 
-Pour OBS PortableApps, installe le dossier complet du plugin dans les données portables :
+Pour OBS PortableApps, installe le plugin dans le layout OBS embarqué :
 
 ```text
 OBSPortable/
-└── Data/obs-studio/plugins/obs-backgroundremoval/
-    ├── bin/64bit/obs-backgroundremoval.dll
-    ├── bin/64bit/onnxruntime.dll
-    ├── bin/64bit/onnxruntime_providers_shared.dll
-    └── data/
+├── App/obs-studio/obs-plugins/64bit/
+│   ├── obs-backgroundremoval.dll
+│   ├── onnxruntime.dll
+│   └── onnxruntime_providers_shared.dll
+├── App/obs-studio/data/obs-plugins/obs-backgroundremoval/
+└── Data/obs-plugins/obs-backgroundremoval/
 ```
 
-Avant de copier une nouvelle version, supprime les anciennes copies du plugin dans `App/obs-studio/obs-plugins/64bit`, `App/obs-studio/data/obs-plugins`, `Data/obs-plugins` et `Data/obs-studio/plugins`. Une seule copie chargeable doit rester.
+Avant de copier une nouvelle version, supprime les anciennes copies du plugin dans `App/obs-studio/obs-plugins/64bit`, `App/obs-studio/data/obs-plugins`, `Data/obs-plugins`, `Data/obs-studio/plugins` et `Data/config/obs-studio/plugins`. Une seule copie de `obs-backgroundremoval.dll` doit rester.
 
 Une fois copié, relance OBS et vérifie dans les logs que le plugin charge la version `0.1.0`.
 
