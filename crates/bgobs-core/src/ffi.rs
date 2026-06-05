@@ -7,8 +7,9 @@
 use std::slice;
 
 use crate::mask::{
-    write_background_mask_from_foreground, write_smooth_temporal_background_mask, MaskError,
-    MaskPostProcessingSettings, TemporalMaskSmoothingSettings,
+    write_background_mask_from_foreground, write_clean_background_mask,
+    write_smooth_temporal_background_mask, MaskError, MaskPostProcessingSettings,
+    SpatialMaskCleanupSettings, TemporalMaskSmoothingSettings,
 };
 
 #[repr(C)]
@@ -46,12 +47,33 @@ impl From<BgobsTemporalMaskSmoothingSettings> for TemporalMaskSmoothingSettings 
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BgobsSpatialMaskCleanupSettings {
+    pub width: usize,
+    pub height: usize,
+    pub foreground_cleanup: f32,
+    pub background_cleanup: f32,
+}
+
+impl From<BgobsSpatialMaskCleanupSettings> for SpatialMaskCleanupSettings {
+    fn from(settings: BgobsSpatialMaskCleanupSettings) -> Self {
+        Self {
+            width: settings.width,
+            height: settings.height,
+            foreground_cleanup: settings.foreground_cleanup,
+            background_cleanup: settings.background_cleanup,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BgobsMaskStatus {
     Ok = 0,
     NullPointer = 1,
     OutputLengthMismatch = 2,
     TemporalLengthMismatch = 3,
+    SpatialLengthMismatch = 4,
 }
 
 #[no_mangle]
@@ -122,11 +144,39 @@ pub unsafe extern "C" fn bgobs_write_smooth_temporal_background_mask(
     .map_or_else(BgobsMaskStatus::from, |_| BgobsMaskStatus::Ok)
 }
 
+#[no_mangle]
+/// Writes a spatially cleaned background mask into a C-owned output buffer.
+///
+/// # Safety
+///
+/// Non-null pointers must reference readable or writable buffers of their
+/// matching length. Null pointers are accepted only when the matching length is
+/// zero. Input and output buffers must not overlap mutably.
+pub unsafe extern "C" fn bgobs_write_clean_background_mask(
+    background_mask: *const u8,
+    background_len: usize,
+    settings: BgobsSpatialMaskCleanupSettings,
+    cleaned_mask: *mut u8,
+    cleaned_len: usize,
+) -> BgobsMaskStatus {
+    let Some(background_mask) = (unsafe { const_slice_from_raw(background_mask, background_len) })
+    else {
+        return BgobsMaskStatus::NullPointer;
+    };
+    let Some(cleaned_mask) = (unsafe { mut_slice_from_raw(cleaned_mask, cleaned_len) }) else {
+        return BgobsMaskStatus::NullPointer;
+    };
+
+    write_clean_background_mask(background_mask, settings.into(), cleaned_mask)
+        .map_or_else(BgobsMaskStatus::from, |_| BgobsMaskStatus::Ok)
+}
+
 impl From<MaskError> for BgobsMaskStatus {
     fn from(error: MaskError) -> Self {
         match error {
             MaskError::OutputLengthMismatch { .. } => BgobsMaskStatus::OutputLengthMismatch,
             MaskError::TemporalLengthMismatch { .. } => BgobsMaskStatus::TemporalLengthMismatch,
+            MaskError::SpatialLengthMismatch { .. } => BgobsMaskStatus::SpatialLengthMismatch,
         }
     }
 }
@@ -220,5 +270,30 @@ mod tests {
         };
 
         assert_eq!(status, BgobsMaskStatus::Ok);
+    }
+
+    #[test]
+    fn spatial_cleanup_ffi_writes_to_c_buffer() {
+        let mut background = [0; 7 * 7];
+        background[3 * 7 + 3] = 255;
+        let mut cleaned = [255; 7 * 7];
+
+        let status = unsafe {
+            bgobs_write_clean_background_mask(
+                background.as_ptr(),
+                background.len(),
+                BgobsSpatialMaskCleanupSettings {
+                    width: 7,
+                    height: 7,
+                    foreground_cleanup: 0.2,
+                    background_cleanup: 0.0,
+                },
+                cleaned.as_mut_ptr(),
+                cleaned.len(),
+            )
+        };
+
+        assert_eq!(status, BgobsMaskStatus::Ok);
+        assert_eq!(cleaned[3 * 7 + 3], 0);
     }
 }

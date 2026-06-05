@@ -23,11 +23,19 @@ typedef struct bgobs_temporal_mask_smoothing_settings {
 	uint8_t protect_foreground;
 } bgobs_temporal_mask_smoothing_settings;
 
+typedef struct bgobs_spatial_mask_cleanup_settings {
+	size_t width;
+	size_t height;
+	float foreground_cleanup;
+	float background_cleanup;
+} bgobs_spatial_mask_cleanup_settings;
+
 typedef enum bgobs_mask_status {
 	BGOBS_MASK_STATUS_OK = 0,
 	BGOBS_MASK_STATUS_NULL_POINTER = 1,
 	BGOBS_MASK_STATUS_OUTPUT_LENGTH_MISMATCH = 2,
 	BGOBS_MASK_STATUS_TEMPORAL_LENGTH_MISMATCH = 3,
+	BGOBS_MASK_STATUS_SPATIAL_LENGTH_MISMATCH = 4,
 } bgobs_mask_status;
 
 bgobs_mask_status bgobs_write_background_mask_from_foreground(const uint8_t *foreground_mask, size_t foreground_len,
@@ -40,6 +48,10 @@ bgobs_mask_status bgobs_write_smooth_temporal_background_mask(const uint8_t *cur
 							      size_t previous_len,
 							      bgobs_temporal_mask_smoothing_settings settings,
 							      uint8_t *smoothed_mask, size_t smoothed_len);
+
+bgobs_mask_status bgobs_write_clean_background_mask(const uint8_t *background_mask, size_t background_len,
+						    bgobs_spatial_mask_cleanup_settings settings, uint8_t *cleaned_mask,
+						    size_t cleaned_len);
 
 #ifdef __cplusplus
 }

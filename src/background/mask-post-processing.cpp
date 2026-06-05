@@ -71,16 +71,32 @@ void smoothMaskContour(cv::Mat &backgroundMask, int kernelSize)
 #endif
 }
 
-void cleanForegroundHoles(cv::Mat &backgroundMask, float foregroundCleanup)
+void cleanMaskSpecklesWithRust(cv::Mat &backgroundMask, float foregroundCleanup, float backgroundCleanup)
 {
 	const float clampedCleanup = std::clamp(foregroundCleanup, 0.0f, 1.0f);
-	if (clampedCleanup <= 0.0f) {
+	const float clampedBackgroundCleanup = std::clamp(backgroundCleanup, 0.0f, 1.0f);
+	if (clampedCleanup <= 0.0f && clampedBackgroundCleanup <= 0.0f) {
 		return;
 	}
 
-	const int kernelSize = makeOddKernelSize(1.0f + 8.0f * clampedCleanup);
-	cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(kernelSize, kernelSize));
-	cv::morphologyEx(backgroundMask, backgroundMask, cv::MORPH_OPEN, kernel);
+	CV_Assert(backgroundMask.type() == CV_8UC1);
+
+	const cv::Mat inputMask = backgroundMask.isContinuous() ? backgroundMask : backgroundMask.clone();
+	cv::Mat cleanedMask(inputMask.size(), CV_8UC1);
+	const size_t maskSize = inputMask.total();
+
+	const bgobs_spatial_mask_cleanup_settings rustSettings = {
+		(size_t)inputMask.cols,
+		(size_t)inputMask.rows,
+		clampedCleanup,
+		clampedBackgroundCleanup,
+	};
+
+	const bgobs_mask_status status = bgobs_write_clean_background_mask(
+		inputMask.ptr<uint8_t>(), maskSize, rustSettings, cleanedMask.ptr<uint8_t>(), maskSize);
+	CV_Assert(status == BGOBS_MASK_STATUS_OK);
+
+	cleanedMask.copyTo(backgroundMask);
 }
 
 cv::Mat makeBackgroundMaskWithRust(const cv::Mat &foregroundMask, bool enableThreshold, float threshold,
@@ -146,7 +162,8 @@ cv::Mat postProcessForegroundMask(const cv::Mat &foregroundMask, const cv::Size 
 	if (settings.enableThreshold) {
 		backgroundMask =
 			makeSoftBackgroundMask(resizedForegroundMask, settings.threshold, settings.edgeSoftness);
-		cleanForegroundHoles(backgroundMask, settings.foregroundCleanup);
+		cleanMaskSpecklesWithRust(backgroundMask, settings.foregroundCleanup,
+					  settings.foregroundCleanup * 0.5f);
 		filterSmallBackgroundComponents(backgroundMask, settings.contourFilter);
 
 		if (settings.smoothContour > 0.0f) {

@@ -20,7 +20,7 @@ Cette version pose les bases du nouveau projet :
 
 - nom public : **BGOBS** ;
 - nom long : **Beau Gosse OBS** ;
-- version plugin : `0.1.0` ;
+- version plugin : `0.1.1` ;
 - filtre français : **Rend-moi beau gosse** ;
 - cœur Rust : `crates/bgobs-core` ;
 - pont C/Rust exposé par `crates/bgobs-core/include/bgobs_core.h` ;
@@ -77,7 +77,7 @@ OBSPortable/
 
 Avant de copier une nouvelle version, supprime les anciennes copies du plugin dans `App/obs-studio/obs-plugins/64bit`, `App/obs-studio/data/obs-plugins`, `Data/obs-plugins`, `Data/obs-studio/plugins` et `Data/config/obs-studio/plugins`. Une seule copie de `obs-backgroundremoval.dll` doit rester.
 
-Une fois copié, relance OBS et vérifie dans les logs que le plugin charge la version `0.1.0`.
+Une fois copié, relance OBS et vérifie dans les logs que le plugin charge la version `0.1.1`.
 
 ## Compiler
 

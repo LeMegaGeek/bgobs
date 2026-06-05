@@ -1,18 +1,19 @@
 # SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 # SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+# SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 name: Bug Report
 description: Report a bug or crash
 labels: bug
-assignees: umireon
+assignees: LeMegaGeek
 body:
   - type: markdown
     id: md_welcome
     attributes:
       value: |
-        ## 🐞 Bug Report for OBS Background Removal
+        ## Bug Report for BGOBS
 
         Please fill out **all required fields**. Incomplete reports may be closed without investigation.
         - Attach an OBS log file (see below).
@@ -55,8 +56,8 @@ body:
     id: plugin_version
     attributes:
       label: Plugin Version
-      description: What version of OBS Background Removal are you using?
-      placeholder: "e.g., 1.0.0, 1.0.0-beta1, git-abcdef"
+      description: What version of BGOBS are you using?
+      placeholder: "e.g., 0.1.1, git-abcdef"
     validations:
       required: true
 

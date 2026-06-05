@@ -38,6 +38,26 @@ impl Default for TemporalMaskSmoothingSettings {
     }
 }
 
+/// Settings used to remove tiny hard-mask speckles without touching soft edges.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpatialMaskCleanupSettings {
+    pub width: usize,
+    pub height: usize,
+    pub foreground_cleanup: f32,
+    pub background_cleanup: f32,
+}
+
+impl Default for SpatialMaskCleanupSettings {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            foreground_cleanup: 0.0,
+            background_cleanup: 0.0,
+        }
+    }
+}
+
 /// Errors returned when output buffers cannot hold a full mask.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MaskError {
@@ -49,6 +69,11 @@ pub enum MaskError {
         current_len: usize,
         previous_len: usize,
         output_len: usize,
+    },
+    SpatialLengthMismatch {
+        input_len: usize,
+        output_len: usize,
+        expected_len: usize,
     },
 }
 
@@ -128,6 +153,84 @@ pub fn smooth_temporal_background_mask(
     Ok(smoothed_mask)
 }
 
+/// Writes a spatially cleaned background mask into `cleaned_mask`.
+///
+/// Values close to 0 are treated as foreground, values close to 255 as
+/// background, and soft edge values are preserved.
+pub fn write_clean_background_mask(
+    background_mask: &[u8],
+    settings: SpatialMaskCleanupSettings,
+    cleaned_mask: &mut [u8],
+) -> Result<(), MaskError> {
+    let Some(expected_len) = settings.width.checked_mul(settings.height) else {
+        return Err(MaskError::SpatialLengthMismatch {
+            input_len: background_mask.len(),
+            output_len: cleaned_mask.len(),
+            expected_len: usize::MAX,
+        });
+    };
+
+    if background_mask.len() != expected_len || cleaned_mask.len() != expected_len {
+        return Err(MaskError::SpatialLengthMismatch {
+            input_len: background_mask.len(),
+            output_len: cleaned_mask.len(),
+            expected_len,
+        });
+    }
+
+    let foreground_cleanup = settings.foreground_cleanup.clamp(0.0, 1.0);
+    let background_cleanup = settings.background_cleanup.clamp(0.0, 1.0);
+    if expected_len == 0 || foreground_cleanup <= 0.0 && background_cleanup <= 0.0 {
+        cleaned_mask.copy_from_slice(background_mask);
+        return Ok(());
+    }
+
+    let radius = cleanup_radius(foreground_cleanup.max(background_cleanup));
+    let foreground_hole_limit = 0.18 + 0.35 * foreground_cleanup;
+    let background_speck_limit = 0.82 - 0.35 * background_cleanup;
+
+    for row in 0..settings.height {
+        for col in 0..settings.width {
+            let index = row * settings.width + col;
+            let value = background_mask[index];
+
+            cleaned_mask[index] = if value >= 192 && foreground_cleanup > 0.0 {
+                let background_ratio = local_background_ratio(
+                    background_mask,
+                    settings.width,
+                    settings.height,
+                    row,
+                    col,
+                    radius,
+                );
+                if background_ratio <= foreground_hole_limit {
+                    0
+                } else {
+                    value
+                }
+            } else if value <= 64 && background_cleanup > 0.0 {
+                let background_ratio = local_background_ratio(
+                    background_mask,
+                    settings.width,
+                    settings.height,
+                    row,
+                    col,
+                    radius,
+                );
+                if background_ratio >= background_speck_limit {
+                    255
+                } else {
+                    value
+                }
+            } else {
+                value
+            };
+        }
+    }
+
+    Ok(())
+}
+
 /// Writes a temporally smoothed background mask into `smoothed_mask`.
 pub fn write_smooth_temporal_background_mask(
     current_background_mask: &[u8],
@@ -189,6 +292,39 @@ fn write_hard_background_mask(foreground_mask: &[u8], threshold: f32, background
             0
         };
     }
+}
+
+fn cleanup_radius(strength: f32) -> usize {
+    (1 + (strength.clamp(0.0, 1.0) * 2.0).round() as usize).clamp(1, 3)
+}
+
+fn local_background_ratio(
+    background_mask: &[u8],
+    width: usize,
+    height: usize,
+    row: usize,
+    col: usize,
+    radius: usize,
+) -> f32 {
+    let row_start = row.saturating_sub(radius);
+    let row_end = (row + radius).min(height - 1);
+    let col_start = col.saturating_sub(radius);
+    let col_end = (col + radius).min(width - 1);
+
+    let mut background_count = 0_u32;
+    let mut sample_count = 0_u32;
+
+    for sample_row in row_start..=row_end {
+        for sample_col in col_start..=col_end {
+            let value = background_mask[sample_row * width + sample_col];
+            if value >= 192 {
+                background_count += 1;
+            }
+            sample_count += 1;
+        }
+    }
+
+    background_count as f32 / sample_count.max(1) as f32
 }
 
 #[cfg(test)]
@@ -255,6 +391,93 @@ mod tests {
             MaskError::OutputLengthMismatch {
                 input_len: 2,
                 output_len: 1
+            }
+        );
+    }
+
+    #[test]
+    fn spatial_cleanup_removes_background_pinhole_in_foreground() {
+        let mut background = vec![0; 7 * 7];
+        background[3 * 7 + 3] = 255;
+        let mut cleaned = vec![255; background.len()];
+
+        write_clean_background_mask(
+            &background,
+            SpatialMaskCleanupSettings {
+                width: 7,
+                height: 7,
+                foreground_cleanup: 0.2,
+                background_cleanup: 0.0,
+            },
+            &mut cleaned,
+        )
+        .unwrap();
+
+        assert_eq!(cleaned[3 * 7 + 3], 0);
+    }
+
+    #[test]
+    fn spatial_cleanup_removes_foreground_speck_in_background() {
+        let mut background = vec![255; 7 * 7];
+        background[3 * 7 + 3] = 0;
+        let mut cleaned = vec![0; background.len()];
+
+        write_clean_background_mask(
+            &background,
+            SpatialMaskCleanupSettings {
+                width: 7,
+                height: 7,
+                foreground_cleanup: 0.0,
+                background_cleanup: 0.2,
+            },
+            &mut cleaned,
+        )
+        .unwrap();
+
+        assert_eq!(cleaned[3 * 7 + 3], 255);
+    }
+
+    #[test]
+    fn spatial_cleanup_preserves_soft_edge_values() {
+        let background = [0, 96, 128, 160, 255];
+        let mut cleaned = [0; 5];
+
+        write_clean_background_mask(
+            &background,
+            SpatialMaskCleanupSettings {
+                width: 5,
+                height: 1,
+                foreground_cleanup: 1.0,
+                background_cleanup: 1.0,
+            },
+            &mut cleaned,
+        )
+        .unwrap();
+
+        assert_eq!(cleaned[1..4], background[1..4]);
+    }
+
+    #[test]
+    fn spatial_cleanup_reports_length_mismatch() {
+        let mut cleaned = [0; 3];
+        let error = write_clean_background_mask(
+            &[0; 4],
+            SpatialMaskCleanupSettings {
+                width: 2,
+                height: 3,
+                foreground_cleanup: 1.0,
+                background_cleanup: 1.0,
+            },
+            &mut cleaned,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            MaskError::SpatialLengthMismatch {
+                input_len: 4,
+                output_len: 3,
+                expected_len: 6
             }
         );
     }

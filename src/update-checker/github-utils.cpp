@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -12,8 +13,7 @@
 #include "github-utils.hpp"
 #include "../plugin-support.h"
 
-static const std::string GITHUB_LATEST_RELEASE_URL =
-	"https://api.github.com/repos/royshil/obs-backgroundremoval/releases/latest";
+static const std::string GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/LeMegaGeek/bgobs/releases/latest";
 
 void github_utils_get_release_information(std::function<void(github_utils_release_information)> callback)
 {
@@ -34,7 +34,7 @@ void github_utils_get_release_information(std::function<void(github_utils_releas
 		obs_data_release(data);
 
 		// remove the "v" prefix in version, if it exists
-		if (version[0] == 'v') {
+		if (!version.empty() && version[0] == 'v') {
 			version = version.substr(1);
 		}
 

@@ -13,6 +13,7 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include <cstring>
 #include <numeric>
 #include <memory>
 #include <exception>
@@ -38,6 +39,7 @@
 #include "update-checker/update-checker.h"
 
 struct background_removal_filter : public filter_data, public std::enable_shared_from_this<background_removal_filter> {
+	std::string beautyPreset;
 	bool enableThreshold = true;
 	bool stopWhenSourceIsInactive = true;
 	float threshold = 0.5f;
@@ -73,6 +75,95 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 
 void background_removal_thread(void *data); // Forward declaration
 
+namespace {
+
+const char *const BGOBS_PRESET_CLEAN = "clean";
+const char *const BGOBS_PRESET_SOFT = "soft";
+const char *const BGOBS_PRESET_PERFORMANCE = "performance";
+const char *const BGOBS_PRESET_CUSTOM = "custom";
+
+struct BackgroundBeautyPreset {
+	const char *id;
+	double threshold;
+	double edgeSoftness;
+	double edgeRefinement;
+	double foregroundCleanup;
+	double contourFilter;
+	double smoothContour;
+	double temporalSmoothFactor;
+	double imageSimilarityThreshold;
+	int maskExpansion;
+	int maskEveryXFrames;
+	int numThreads;
+};
+
+const BackgroundBeautyPreset BGOBS_PRESETS[] = {
+	{BGOBS_PRESET_CLEAN, 0.50, 0.08, 0.35, 0.22, 0.035, 0.55, 0.82, 35.0, 0, 1, 1},
+	{BGOBS_PRESET_SOFT, 0.48, 0.16, 0.45, 0.16, 0.020, 0.70, 0.88, 34.0, 0, 1, 1},
+	{BGOBS_PRESET_PERFORMANCE, 0.52, 0.04, 0.15, 0.10, 0.050, 0.35, 0.65, 38.0, 0, 2, 1},
+};
+
+const BackgroundBeautyPreset *findBeautyPreset(const char *presetId)
+{
+	if (!presetId || strcmp(presetId, BGOBS_PRESET_CUSTOM) == 0) {
+		return nullptr;
+	}
+
+	for (const BackgroundBeautyPreset &preset : BGOBS_PRESETS) {
+		if (strcmp(presetId, preset.id) == 0) {
+			return &preset;
+		}
+	}
+
+	return nullptr;
+}
+
+void applyBeautyPreset(obs_data_t *settings, const BackgroundBeautyPreset &preset)
+{
+	obs_data_set_bool(settings, "enable_threshold", true);
+	obs_data_set_double(settings, "threshold", preset.threshold);
+	obs_data_set_double(settings, "edge_softness", preset.edgeSoftness);
+	obs_data_set_double(settings, "edge_refinement", preset.edgeRefinement);
+	obs_data_set_double(settings, "foreground_cleanup", preset.foregroundCleanup);
+	obs_data_set_double(settings, "contour_filter", preset.contourFilter);
+	obs_data_set_double(settings, "smooth_contour", preset.smoothContour);
+	obs_data_set_double(settings, "temporal_smooth_factor", preset.temporalSmoothFactor);
+	obs_data_set_double(settings, "image_similarity_threshold", preset.imageSimilarityThreshold);
+	obs_data_set_bool(settings, "enable_image_similarity", true);
+	obs_data_set_double(settings, "mask_expansion", preset.maskExpansion);
+	obs_data_set_int(settings, "mask_every_x_frames", preset.maskEveryXFrames);
+	obs_data_set_int(settings, "numThreads", preset.numThreads);
+}
+
+void markBeautyPresetCustom(obs_data_t *settings)
+{
+	if (settings) {
+		obs_data_set_string(settings, "beauty_preset", BGOBS_PRESET_CUSTOM);
+	}
+}
+
+void setPropertyVisible(obs_properties_t *ppts, const char *propertyName, bool visible)
+{
+	obs_property_t *property = obs_properties_get(ppts, propertyName);
+	if (property) {
+		obs_property_set_visible(property, visible);
+	}
+}
+
+void setAdvancedPropertiesVisible(obs_properties_t *ppts, bool visible)
+{
+	for (const char *propertyName :
+	     {"model_select", "useGPU", "mask_every_x_frames", "numThreads", "enable_focal_blur", "enable_threshold",
+	      "threshold_group", "focal_blur_group", "temporal_smooth_factor", "image_similarity_threshold",
+	      "enable_image_similarity", "mask_expansion"}) {
+		setPropertyVisible(ppts, propertyName, visible);
+	}
+
+	setPropertyVisible(ppts, "blur_background", true);
+}
+
+} // namespace
+
 const char *background_filter_getname(void *unused)
 {
 	UNUSED_PARAMETER(unused);
@@ -92,7 +183,30 @@ static bool visible_on_bool(obs_properties_t *ppts, obs_data_t *settings, const 
 static bool enable_threshold_modified(obs_properties_t *ppts, obs_property_t *p, obs_data_t *settings)
 {
 	UNUSED_PARAMETER(p);
+	markBeautyPresetCustom(settings);
 	return visible_on_bool(ppts, settings, "enable_threshold", "threshold_group");
+}
+
+static bool beauty_preset_modified(obs_properties_t *ppts, obs_property_t *p, obs_data_t *settings)
+{
+	UNUSED_PARAMETER(ppts);
+	UNUSED_PARAMETER(p);
+
+	const BackgroundBeautyPreset *preset = findBeautyPreset(obs_data_get_string(settings, "beauty_preset"));
+	if (preset) {
+		applyBeautyPreset(settings, *preset);
+	}
+
+	return true;
+}
+
+static bool beauty_tuning_modified(obs_properties_t *ppts, obs_property_t *p, obs_data_t *settings)
+{
+	UNUSED_PARAMETER(ppts);
+	UNUSED_PARAMETER(p);
+
+	markBeautyPresetCustom(settings);
+	return true;
 }
 
 static bool enable_focal_blur(obs_properties_t *ppts, obs_property_t *p, obs_data_t *settings)
@@ -104,27 +218,21 @@ static bool enable_focal_blur(obs_properties_t *ppts, obs_property_t *p, obs_dat
 static bool enable_image_similarity(obs_properties_t *ppts, obs_property_t *p, obs_data_t *settings)
 {
 	UNUSED_PARAMETER(p);
+	markBeautyPresetCustom(settings);
 	return visible_on_bool(ppts, settings, "enable_image_similarity", "image_similarity_threshold");
 }
 
 static bool enable_advanced_settings(obs_properties_t *ppts, obs_property_t *p, obs_data_t *settings)
 {
-	const bool enabled = obs_data_get_bool(settings, "advanced");
-	p = obs_properties_get(ppts, "blur_background");
-	obs_property_set_visible(p, true);
+	UNUSED_PARAMETER(p);
 
-	for (const char *prop_name :
-	     {"model_select", "useGPU", "mask_every_x_frames", "numThreads", "enable_focal_blur", "enable_threshold",
-	      "threshold_group", "focal_blur_group", "temporal_smooth_factor", "image_similarity_threshold",
-	      "enable_image_similarity", "mask_expansion"}) {
-		p = obs_properties_get(ppts, prop_name);
-		obs_property_set_visible(p, enabled);
-	}
+	const bool enabled = obs_data_get_bool(settings, "advanced");
+	setAdvancedPropertiesVisible(ppts, enabled);
 
 	if (enabled) {
-		enable_threshold_modified(ppts, p, settings);
-		enable_focal_blur(ppts, p, settings);
-		enable_image_similarity(ppts, p, settings);
+		visible_on_bool(ppts, settings, "enable_threshold", "threshold_group");
+		visible_on_bool(ppts, settings, "enable_focal_blur", "focal_blur_group");
+		visible_on_bool(ppts, settings, "enable_image_similarity", "image_similarity_threshold");
 	}
 
 	return true;
@@ -142,6 +250,14 @@ obs_properties_t *background_filter_properties(void *data)
 	// If advanced is selected show the advanced settings, otherwise hide them
 	obs_property_set_modified_callback(advanced, enable_advanced_settings);
 
+	obs_property_t *p_beauty_preset = obs_properties_add_list(
+		props, "beauty_preset", obs_module_text("BeautyPreset"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetClean"), BGOBS_PRESET_CLEAN);
+	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetSoft"), BGOBS_PRESET_SOFT);
+	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetPerformance"), BGOBS_PRESET_PERFORMANCE);
+	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetCustom"), BGOBS_PRESET_CUSTOM);
+	obs_property_set_modified_callback(p_beauty_preset, beauty_preset_modified);
+
 	/* Threshold props */
 	obs_property_t *p_enable_threshold =
 		obs_properties_add_bool(props, "enable_threshold", obs_module_text("EnableThreshold"));
@@ -150,22 +266,29 @@ obs_properties_t *background_filter_properties(void *data)
 	// Threshold props group
 	obs_properties_t *threshold_props = obs_properties_create();
 
-	obs_properties_add_float_slider(threshold_props, "threshold", obs_module_text("Threshold"), 0.0, 1.0, 0.025);
+	obs_property_t *p_threshold = obs_properties_add_float_slider(threshold_props, "threshold",
+								      obs_module_text("Threshold"), 0.0, 1.0, 0.025);
+	obs_property_set_modified_callback(p_threshold, beauty_tuning_modified);
 
-	obs_properties_add_float_slider(threshold_props, "edge_softness", obs_module_text("EdgeSoftness"), 0.0, 1.0,
-					0.01);
+	obs_property_t *p_edge_softness = obs_properties_add_float_slider(
+		threshold_props, "edge_softness", obs_module_text("EdgeSoftness"), 0.0, 1.0, 0.01);
+	obs_property_set_modified_callback(p_edge_softness, beauty_tuning_modified);
 
-	obs_properties_add_float_slider(threshold_props, "edge_refinement", obs_module_text("EdgeRefinement"), 0.0, 1.0,
-					0.05);
+	obs_property_t *p_edge_refinement = obs_properties_add_float_slider(
+		threshold_props, "edge_refinement", obs_module_text("EdgeRefinement"), 0.0, 1.0, 0.05);
+	obs_property_set_modified_callback(p_edge_refinement, beauty_tuning_modified);
 
-	obs_properties_add_float_slider(threshold_props, "foreground_cleanup", obs_module_text("ForegroundCleanup"),
-					0.0, 1.0, 0.05);
+	obs_property_t *p_foreground_cleanup = obs_properties_add_float_slider(
+		threshold_props, "foreground_cleanup", obs_module_text("ForegroundCleanup"), 0.0, 1.0, 0.05);
+	obs_property_set_modified_callback(p_foreground_cleanup, beauty_tuning_modified);
 
-	obs_properties_add_float_slider(threshold_props, "contour_filter",
-					obs_module_text("ContourFilterPercentOfImage"), 0.0, 1.0, 0.025);
+	obs_property_t *p_contour_filter = obs_properties_add_float_slider(
+		threshold_props, "contour_filter", obs_module_text("ContourFilterPercentOfImage"), 0.0, 1.0, 0.025);
+	obs_property_set_modified_callback(p_contour_filter, beauty_tuning_modified);
 
-	obs_properties_add_float_slider(threshold_props, "smooth_contour", obs_module_text("SmoothSilhouette"), 0.0,
-					1.0, 0.05);
+	obs_property_t *p_smooth_contour = obs_properties_add_float_slider(
+		threshold_props, "smooth_contour", obs_module_text("SmoothSilhouette"), 0.0, 1.0, 0.05);
+	obs_property_set_modified_callback(p_smooth_contour, beauty_tuning_modified);
 
 	obs_properties_add_float_slider(threshold_props, "feather", obs_module_text("FeatherBlendSilhouette"), 0.0, 1.0,
 					0.05);
@@ -174,7 +297,9 @@ obs_properties_t *background_filter_properties(void *data)
 				 threshold_props);
 
 	/* Mask expansion slider - in advanced settings */
-	obs_properties_add_int_slider(props, "mask_expansion", obs_module_text("MaskExpansion"), -30, 30, 1);
+	obs_property_t *p_mask_expansion =
+		obs_properties_add_int_slider(props, "mask_expansion", obs_module_text("MaskExpansion"), -30, 30, 1);
+	obs_property_set_modified_callback(p_mask_expansion, beauty_tuning_modified);
 
 	/* GPU, CPU and performance Props */
 	obs_property_t *p_use_gpu = obs_properties_add_list(props, "useGPU", obs_module_text("InferenceDevice"),
@@ -197,8 +322,13 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_property_list_add_string(p_use_gpu, obs_module_text("CoreML"), USEGPU_COREML);
 #endif
 
-	obs_properties_add_int(props, "mask_every_x_frames", obs_module_text("CalculateMaskEveryXFrame"), 1, 300, 1);
-	obs_properties_add_int_slider(props, "numThreads", obs_module_text("NumThreads"), 0, 8, 1);
+	obs_property_t *p_mask_every_x_frames = obs_properties_add_int(
+		props, "mask_every_x_frames", obs_module_text("CalculateMaskEveryXFrame"), 1, 300, 1);
+	obs_property_set_modified_callback(p_mask_every_x_frames, beauty_tuning_modified);
+
+	obs_property_t *p_num_threads =
+		obs_properties_add_int_slider(props, "numThreads", obs_module_text("NumThreads"), 0, 8, 1);
+	obs_property_set_modified_callback(p_num_threads, beauty_tuning_modified);
 
 	/* Model selection Props */
 	obs_property_t *p_model_select = obs_properties_add_list(props, "model_select",
@@ -213,15 +343,17 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_property_list_add_string(p_model_select, obs_module_text("Robust Video Matting"), MODEL_RVM);
 	obs_property_list_add_string(p_model_select, obs_module_text("TCMonoDepth"), MODEL_DEPTH_TCMONODEPTH);
 
-	obs_properties_add_float_slider(props, "temporal_smooth_factor", obs_module_text("TemporalSmoothFactor"), 0.0,
-					1.0, 0.01);
+	obs_property_t *p_temporal_smooth_factor = obs_properties_add_float_slider(
+		props, "temporal_smooth_factor", obs_module_text("TemporalSmoothFactor"), 0.0, 1.0, 0.01);
+	obs_property_set_modified_callback(p_temporal_smooth_factor, beauty_tuning_modified);
 
 	obs_property_t *p_enable_image_similarity =
 		obs_properties_add_bool(props, "enable_image_similarity", obs_module_text("EnableImageSimilarity"));
 	obs_property_set_modified_callback(p_enable_image_similarity, enable_image_similarity);
 
-	obs_properties_add_float_slider(props, "image_similarity_threshold",
-					obs_module_text("ImageSimilarityThreshold"), 0.0, 100.0, 1.0);
+	obs_property_t *p_image_similarity_threshold = obs_properties_add_float_slider(
+		props, "image_similarity_threshold", obs_module_text("ImageSimilarityThreshold"), 0.0, 100.0, 1.0);
+	obs_property_set_modified_callback(p_image_similarity_threshold, beauty_tuning_modified);
 
 	/* Background Blur Props */
 	obs_properties_add_int_slider(props, "blur_background", obs_module_text("BlurBackgroundFactor0NoBlurUseColor"),
@@ -252,6 +384,8 @@ obs_properties_t *background_filter_properties(void *data)
 	}
 	obs_properties_add_text(props, "info", basic_info.c_str(), OBS_TEXT_INFO);
 
+	setAdvancedPropertiesVisible(props, false);
+
 	UNUSED_PARAMETER(data);
 	return props;
 }
@@ -259,14 +393,15 @@ obs_properties_t *background_filter_properties(void *data)
 void background_filter_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, "advanced", false);
+	obs_data_set_default_string(settings, "beauty_preset", BGOBS_PRESET_CLEAN);
 	obs_data_set_default_bool(settings, "stop_when_source_is_inactive", true);
 	obs_data_set_default_bool(settings, "enable_threshold", true);
 	obs_data_set_default_double(settings, "threshold", 0.5);
-	obs_data_set_default_double(settings, "edge_softness", 0.05);
-	obs_data_set_default_double(settings, "edge_refinement", 0.25);
-	obs_data_set_default_double(settings, "foreground_cleanup", 0.15);
-	obs_data_set_default_double(settings, "contour_filter", 0.05);
-	obs_data_set_default_double(settings, "smooth_contour", 0.5);
+	obs_data_set_default_double(settings, "edge_softness", 0.08);
+	obs_data_set_default_double(settings, "edge_refinement", 0.35);
+	obs_data_set_default_double(settings, "foreground_cleanup", 0.22);
+	obs_data_set_default_double(settings, "contour_filter", 0.035);
+	obs_data_set_default_double(settings, "smooth_contour", 0.55);
 	obs_data_set_default_double(settings, "mask_expansion", 0);
 	obs_data_set_default_double(settings, "feather", 0.0);
 #if defined(__APPLE__)
@@ -280,7 +415,7 @@ void background_filter_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "blur_background", 0);
 	obs_data_set_default_int(settings, "numThreads", 1);
 	obs_data_set_default_bool(settings, "enable_focal_blur", false);
-	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.85);
+	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.82);
 	obs_data_set_default_double(settings, "image_similarity_threshold", 35.0);
 	obs_data_set_default_bool(settings, "enable_image_similarity", true);
 	obs_data_set_default_double(settings, "blur_focus_point", 0.1);
@@ -303,6 +438,12 @@ void background_filter_update(void *data, obs_data_t *settings)
 	}
 
 	tf->isDisabled = true;
+
+	const char *beautyPreset = obs_data_get_string(settings, "beauty_preset");
+	tf->beautyPreset = beautyPreset ? beautyPreset : BGOBS_PRESET_CUSTOM;
+	if (const BackgroundBeautyPreset *preset = findBeautyPreset(tf->beautyPreset.c_str())) {
+		applyBeautyPreset(settings, *preset);
+	}
 
 	tf->stopWhenSourceIsInactive = obs_data_get_bool(settings, "stop_when_source_is_inactive");
 	tf->enableThreshold = (float)obs_data_get_bool(settings, "enable_threshold");
@@ -386,9 +527,10 @@ void background_filter_update(void *data, obs_data_t *settings)
 	obs_leave_graphics();
 
 	// Log the currently selected options
-	obs_log(LOG_INFO, "Background Removal Filter Options:");
+	obs_log(LOG_INFO, "BGOBS filter options:");
 	// name of the source that the filter is attached to
 	obs_log(LOG_INFO, "  Source: %s", obs_source_get_name(tf->source));
+	obs_log(LOG_INFO, "  Preset: %s", tf->beautyPreset.c_str());
 	obs_log(LOG_INFO, "  Model: %s", tf->modelSelection.c_str());
 	obs_log(LOG_INFO, "  Inference Device: %s", tf->useGPU.c_str());
 	obs_log(LOG_INFO, "  Num Threads: %d", tf->numThreads);

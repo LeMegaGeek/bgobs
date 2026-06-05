@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -22,15 +23,15 @@ static std::mutex latestVersionMutex;
 void check_update(void)
 {
 	bool shouldCheckForUpdates = false;
-	if (getFlagFromConfig("check_for_updates", &shouldCheckForUpdates, true) != OBS_BGREMOVAL_CONFIG_SUCCESS) {
-		// Failed to get the config value, assume it's enabled
-		shouldCheckForUpdates = true;
+	if (getFlagFromConfig("check_for_updates", &shouldCheckForUpdates, false) != OBS_BGREMOVAL_CONFIG_SUCCESS) {
+		// Failed to get the config value; keep update checks disabled by default.
+		shouldCheckForUpdates = false;
 		// store the default value
 		setFlagInConfig("check_for_updates", shouldCheckForUpdates);
 	}
 
 	if (!shouldCheckForUpdates) {
-		// Update checks are disabled
+		obs_log(LOG_INFO, "Update checks disabled");
 		return;
 	}
 
@@ -58,7 +59,6 @@ void check_update(void)
 const char *get_latest_version(void)
 {
 	std::lock_guard<std::mutex> lock(latestVersionMutex);
-	obs_log(LOG_INFO, "get_latest_version: %s", latestVersionForUpdate.c_str());
 	if (latestVersionForUpdate.empty()) {
 		return nullptr;
 	}
