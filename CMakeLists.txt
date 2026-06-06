@@ -5,13 +5,33 @@
 cmake_minimum_required(VERSION 3.28)
 
 ### Options
-set(PLUGIN_NAME "obs-backgroundremoval" CACHE STRING "Name of plugin")
+set(PLUGIN_NAME "bgobs" CACHE STRING "Name of plugin")
 set(PLUGIN_DISPLAY_NAME "BGOBS" CACHE STRING "Display name of plugin")
 set(PLUGIN_AUTHOR "LeMegaGeek" CACHE STRING "Author of plugin")
 set(PLUGIN_EMAIL "d.github@chey.net" CACHE STRING "Author email of plugin")
 set(PLUGIN_BUILD_NUMBER "1" CACHE STRING "Build number in plugin metadata")
-set(PLUGIN_BUNDLE_ID "com.royshilkrot.obs-backgroundremoval" CACHE STRING "Bundle ID of plugin installer")
+set(PLUGIN_BUNDLE_ID "net.lemegageek.bgobs" CACHE STRING "Bundle ID of plugin installer")
 set(PACKAGE_VERSION_SUFFIX "" CACHE STRING "Version suffix for plugin package")
+
+if(PLUGIN_NAME STREQUAL "obs-backgroundremoval")
+  set(PLUGIN_NAME "bgobs" CACHE STRING "Name of plugin" FORCE)
+endif()
+
+if(PLUGIN_DISPLAY_NAME STREQUAL "OBS Background Removal")
+  set(PLUGIN_DISPLAY_NAME "BGOBS" CACHE STRING "Display name of plugin" FORCE)
+endif()
+
+if(PLUGIN_AUTHOR STREQUAL "Roy Shilkrot")
+  set(PLUGIN_AUTHOR "LeMegaGeek" CACHE STRING "Author of plugin" FORCE)
+endif()
+
+if(PLUGIN_EMAIL STREQUAL "roy.shil@gmail.com")
+  set(PLUGIN_EMAIL "d.github@chey.net" CACHE STRING "Author email of plugin" FORCE)
+endif()
+
+if(PLUGIN_BUNDLE_ID STREQUAL "com.royshilkrot.obs-backgroundremoval")
+  set(PLUGIN_BUNDLE_ID "net.lemegageek.bgobs" CACHE STRING "Bundle ID of plugin installer" FORCE)
+endif()
 
 ### Project
 block(SCOPE_FOR POLICIES VARIABLES PROPAGATE PLUGIN_VERSION)
@@ -19,7 +39,7 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE PLUGIN_VERSION)
   string(STRIP "${VERSION_CONTENT}" PLUGIN_VERSION)
 endblock()
 
-project(obs-backgroundremoval VERSION "${PLUGIN_VERSION}" LANGUAGES C CXX)
+project(bgobs VERSION "${PLUGIN_VERSION}" LANGUAGES C CXX)
 
 if(MSVC)
   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/common" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows")
@@ -475,6 +495,34 @@ set(CPACK_DEBIAN_COMPRESSION_TYPE zstd)
 set(CPACK_DEBIAN_DEBUGINFO_PACKAGE TRUE)
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS TRUE)
+
+set(BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS)
+foreach(BGOBS_ONNXRUNTIME_PREFIX IN LISTS CMAKE_PREFIX_PATH)
+  list(APPEND BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS "${BGOBS_ONNXRUNTIME_PREFIX}/lib")
+endforeach()
+
+foreach(
+  BGOBS_ONNXRUNTIME_LIB_DIR
+  IN
+  ITEMS
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/onnxruntime/lib"
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/ort_x86_64-prefix/lib"
+    "${PLUGIN_BUILD_DIR}/.deps/onnxruntime/lib"
+    "${PLUGIN_BUILD_DIR}/.deps_vendor/ort_x86_64-prefix/lib"
+    "${PLUGIN_BUILD_DIR}/ort_installed/lib"
+)
+  if(
+    EXISTS "${BGOBS_ONNXRUNTIME_LIB_DIR}/libonnxruntime.so"
+    OR EXISTS "${BGOBS_ONNXRUNTIME_LIB_DIR}/libonnxruntime.so.1"
+  )
+    list(APPEND BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS "${BGOBS_ONNXRUNTIME_LIB_DIR}")
+  endif()
+endforeach()
+
+if(BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS)
+  list(REMOVE_DUPLICATES BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS)
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS}")
+endif()
 
 include(CPack) # This line must be placed after all the package configurations
 

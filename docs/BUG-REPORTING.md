@@ -1,6 +1,7 @@
 # Reporting Bugs
 
-If you think you've found a bug, please report it by [opening an issue](https://github.com/royshil/obs-backgroundremoval/issues)
+If you think you've found a BGOBS bug, please report it by opening an issue:
+https://github.com/LeMegaGeek/bgobs/issues
 
 Please include the following information:
 - Desription of the bug

@@ -1,87 +1,107 @@
 # Comment devenir beau gosse dans OBS
 
-BGOBS, pour **Beau Gosse OBS**, est un plugin OBS Studio qui retire l'arrière-plan d'une webcam ou d'une source vidéo et aide à obtenir un contour plus propre autour du sujet.
+BGOBS, pour **Beau Gosse OBS**, est un plugin OBS Studio qui retire ou floute l'arriere-plan d'une webcam tout en cherchant un contour plus propre autour du sujet.
 
-La version 0.1 est une première version de transition : le plugin affiche l'identité BGOBS, commence à isoler le traitement du masque dans un cœur Rust, mais conserve encore le nom technique `obs-backgroundremoval` pour rester compatible avec l'installation, les chemins OBS existants et les paquets hérités du projet d'origine.
+La version `0.2.0` donne enfin au plugin sa propre identite technique. BGOBS n'est plus charge par OBS comme `obs-backgroundremoval` : le module, le paquet, le dossier de donnees et les IDs de filtres utilisent maintenant `bgobs`. L'ancien plugin peut donc etre retire proprement, sans collision de sources OBS.
 
-## Ce que fait BGOBS
+## Ce Que Fait BGOBS
 
-- ajoute un filtre OBS nommé **Rend-moi beau gosse** dans l'interface française ;
-- segmente le sujet à l'aide des modèles ONNX déjà fournis par le plugin d'origine ;
-- transforme la prédiction du modèle en masque d'arrière-plan exploitable par OBS ;
-- applique un lissage temporel pour réduire les contours instables d'une image à l'autre ;
-- conserve les fonctions existantes de remplacement de fond, flou, couleur transparente et amélioration basse lumière.
+- ajoute un filtre OBS nomme **Rend-moi beau gosse** dans l'interface francaise ;
+- expose des styles de masque **Naturel**, **Studio**, **Net** et **Performance** ;
+- propose un **apercu du masque** pour regler le contour rapidement ;
+- applique un lissage temporel pour limiter les contours qui tremblent ;
+- affine les bords avec l'image source pour reduire les halos ;
+- conserve le flou d'arriere-plan et l'amelioration basse lumiere du projet d'origine.
 
-L'objectif de BGOBS n'est pas seulement de retirer le fond. Le but est d'obtenir une image qui tient mieux en direct : moins de halo, moins de bord cranté, moins de masque qui tremble.
+L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
-## Version 0.1
+## Version 0.2.0
 
-Cette version pose les bases du nouveau projet :
+Cette version pose la base propre du nouveau projet :
 
-- nom public : **BGOBS** ;
+- nom court : **BGOBS** ;
 - nom long : **Beau Gosse OBS** ;
-- version plugin : `0.1.1` ;
-- filtre français : **Rend-moi beau gosse** ;
-- cœur Rust : `crates/bgobs-core` ;
-- pont C/Rust exposé par `crates/bgobs-core/include/bgobs_core.h` ;
-- intégration CMake pour compiler et lier le cœur Rust avec le plugin OBS.
+- module OBS : `bgobs` ;
+- binaire Linux : `bgobs.so` ;
+- binaire Windows : `bgobs.dll` ;
+- dossier de donnees OBS : `bgobs` ;
+- filtre principal : `bgobs_background_removal` ;
+- filtre portrait : `bgobs_enhance_portrait` ;
+- bundle ID : `net.lemegageek.bgobs` ;
+- coeur Rust : `crates/bgobs-core`.
 
-Le code C++ reste majoritaire pour l'instant. Le Rust prend en charge les opérations de masque les plus faciles à isoler proprement : seuil, bord doux, inversion et lissage temporel.
+Le C++ garde l'integration OBS, les textures, les proprietes et ONNX Runtime. Rust prend progressivement en charge les traitements purs du masque, plus faciles a tester sans OBS.
 
-## Utilisation dans OBS
+## Utilisation Dans OBS
 
-1. Ajoute ou sélectionne une source vidéo.
+1. Ajoute ou selectionne une source video.
 2. Ouvre les filtres de la source.
-3. Ajoute le filtre **Rend-moi beau gosse**.
-4. Choisis le modèle de segmentation adapté à ta machine.
-5. Ajuste le seuil, le bord doux et le lissage jusqu'à obtenir un contour stable.
+3. Ajoute **Rend-moi beau gosse**.
+4. Choisis un style BGOBS.
+5. Active **Apercu du masque** si tu veux regler le contour finement.
+6. Desactive l'apercu quand le resultat te convient.
 
-Le bon réglage dépend beaucoup de la lumière. Une lumière frontale douce donne souvent un meilleur résultat qu'un modèle plus lourd.
+Une lumiere frontale douce reste souvent plus efficace qu'un modele plus lourd. Les contours difficiles viennent souvent d'un contre-jour, d'un fond trop proche de la couleur des cheveux, ou d'une webcam trop compressee.
 
-## Installation Linux
+## Installation Linux Utilisateur
 
-Pour une installation utilisateur OBS, le plugin doit être disposé comme ceci :
+Pour une installation OBS locale sans droits administrateur :
 
 ```text
-~/.config/obs-studio/plugins/obs-backgroundremoval/
-├── bin/64bit/obs-backgroundremoval.so
+~/.config/obs-studio/plugins/bgobs/
+├── bin/64bit/bgobs.so
 └── data/
 ```
 
-Les bibliothèques ONNX Runtime doivent être accessibles au chargement du plugin. Dans notre installation locale, elles sont placées dans le même dossier que le `.so` :
+Les bibliotheques ONNX Runtime doivent etre accessibles au chargement du plugin. Pour notre build local, elles sont placees a cote du `.so` :
 
 ```text
-~/.config/obs-studio/plugins/obs-backgroundremoval/bin/64bit/
-├── obs-backgroundremoval.so
+~/.config/obs-studio/plugins/bgobs/bin/64bit/
+├── bgobs.so
 ├── libonnxruntime.so
 ├── libonnxruntime.so.1
 ├── libonnxruntime.so.1.23.2
 └── libonnxruntime_providers_shared.so
 ```
 
-Si OBS charge encore une ancienne version installée dans `/usr/lib`, il faut remplacer le plugin système avec les droits administrateur ou retirer l'ancien paquet.
+Si l'ancien paquet systeme est encore installe, OBS peut aussi afficher l'ancien filtre. Il n'entre plus en collision avec BGOBS `0.2.0`, mais il vaut mieux le retirer :
+
+```bash
+sudo apt remove obs-backgroundremoval
+```
 
 ## Installation Windows PortableApps
 
-Pour OBS PortableApps, installe le plugin dans le layout OBS embarqué :
+Pour OBS PortableApps, le ZIP Windows doit contenir un dossier `bgobs`.
+
+Copie les DLL dans :
 
 ```text
-OBSPortable/
-├── App/obs-studio/obs-plugins/64bit/
-│   ├── obs-backgroundremoval.dll
-│   ├── onnxruntime.dll
-│   └── onnxruntime_providers_shared.dll
-├── App/obs-studio/data/obs-plugins/obs-backgroundremoval/
-└── Data/obs-plugins/obs-backgroundremoval/
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\
 ```
 
-Avant de copier une nouvelle version, supprime les anciennes copies du plugin dans `App/obs-studio/obs-plugins/64bit`, `App/obs-studio/data/obs-plugins`, `Data/obs-plugins`, `Data/obs-studio/plugins` et `Data/config/obs-studio/plugins`. Une seule copie de `obs-backgroundremoval.dll` doit rester.
+Copie les donnees dans les deux emplacements utilises par PortableApps :
 
-Une fois copié, relance OBS et vérifie dans les logs que le plugin charge la version `0.1.1`.
+```text
+<OBS-StudioPortable>\App\obs-studio\data\obs-plugins\bgobs\
+<OBS-StudioPortable>\Data\obs-plugins\bgobs\
+```
+
+La disposition finale doit inclure :
+
+```text
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\bgobs.dll
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
+<OBS-StudioPortable>\App\obs-studio\data\obs-plugins\bgobs\models\
+<OBS-StudioPortable>\Data\obs-plugins\bgobs\models\
+```
+
+Avant de copier une nouvelle version, lance `remove-old-installation.bat` depuis le ZIP. Il retire les anciennes copies `obs-backgroundremoval` et les anciennes copies `bgobs`.
 
 ## Compiler
 
-Les commandes Rust utiles :
+Rust :
 
 ```bash
 cargo test --workspace
@@ -89,53 +109,26 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-Le plugin OBS se compile ensuite avec CMake. Exemple avec un dossier de build local déjà configuré :
+Plugin OBS local :
 
 ```bash
-cmake --build build/local-obs --target obs-backgroundremoval
-ctest --test-dir build/local-obs --output-on-failure -R mask-post-processing
+cmake --build build/local-obs --target bgobs
+ctest --test-dir build/local-obs --output-on-failure
 ```
 
-Sur Windows, la distribution est produite par le workflow GitHub Actions **Windows Package**.
-
-## Organisation du projet
-
-```text
-crates/bgobs-core/                  Cœur Rust du traitement de masque
-crates/bgobs-core/include/          Interface C publique du cœur Rust
-src/background/                     Intégration OBS et post-traitement C++
-data/locale/                        Libellés affichés dans OBS
-data/models/                        Modèles ONNX et licences associées
-docs/                               Notes techniques et installation
-```
-
-La frontière actuelle est volontairement simple : le C++ reste responsable d'OBS, des textures, des propriétés et du cycle de vie plugin ; Rust gère progressivement les calculs purs, testables sans OBS.
-
-## Qualité
-
-Avant de pousser une modification, vérifier au minimum :
+Controles de qualite :
 
 ```bash
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --all --check
-.venv/bin/reuse lint
 .venv/bin/gersemi --check CMakeLists.txt
+.venv/bin/reuse lint
+git diff --check
 ```
 
-Pour les changements C ou C++ :
+## Origine Et Licence
 
-```bash
-.venv/bin/clang-format --dry-run --Werror src/background/mask-post-processing.cpp src/plugin-support.c
-```
+BGOBS est derive de **OBS Background Removal** de Roy Shilkrot et Kaito Udagawa.
 
-## Origine et licence
-
-BGOBS est dérivé de **OBS Background Removal** de Roy Shilkrot et Kaito Udagawa.
-
-Le projet reste distribué sous licence **GPL-3.0-or-later**. Les modèles embarqués ont leurs propres licences dans `data/models/*.license` et doivent être conservés avec les fichiers correspondants.
-
-Les contributions destinées au projet d'origine doivent respecter les règles de contribution upstream. Pour BGOBS, l'objectif est de garder un historique propre, des changements relisibles et des tests reproductibles.
+Le projet reste distribue sous licence **GPL-3.0-or-later**. Les modeles embarques ont leurs propres licences dans `data/models/*.license` et doivent rester avec les fichiers correspondants.
 
 <!--
 SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>

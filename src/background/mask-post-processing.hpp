@@ -9,7 +9,7 @@
 
 #include <opencv2/core.hpp>
 
-namespace background_removal {
+namespace bgobs {
 
 struct MaskPostProcessingSettings {
 	bool enableThreshold = true;
@@ -40,6 +40,6 @@ cv::Mat smoothTemporalBackgroundMask(const cv::Mat &currentBackgroundMask, const
 cv::Mat refineBackgroundMaskWithImage(const cv::Mat &backgroundMask, const cv::Mat &sourceImage,
 				      const ImageGuidedMaskRefinementSettings &settings);
 
-} // namespace background_removal
+} // namespace bgobs
 
 #endif // BACKGROUND_MASK_POST_PROCESSING_HPP

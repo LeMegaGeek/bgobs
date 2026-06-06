@@ -1,4 +1,4 @@
-How to Install OBS Background Removal Plugin on Windows
+How to Install BGOBS on Windows
 =============================================================
 
 PortableApps OBS Studio
@@ -18,8 +18,7 @@ PortableApps OBS Studio
 
      D:\PortableApps\OBS-StudioPortable\
 
-   This matters if OBS still loads an old 1.3.x DLL from a legacy
-   obs-plugins\64bit folder.
+   This removes both older obs-backgroundremoval files and previous BGOBS files.
 
 3. Find the folder that contains OBS-StudioPortable.exe.
 
@@ -29,7 +28,7 @@ PortableApps OBS Studio
 
 4. Copy the DLL files from:
 
-     obs-backgroundremoval\bin\64bit\
+     bgobs\bin\64bit\
 
    into:
 
@@ -37,24 +36,24 @@ PortableApps OBS Studio
 
 5. Copy the contents of:
 
-     obs-backgroundremoval\data\
+     bgobs\data\
 
    into both of these folders:
 
-     D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\obs-backgroundremoval\
-     D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\obs-backgroundremoval\
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\bgobs\
+     D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\bgobs\
 
 6. The final layout should include:
 
-     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\obs-backgroundremoval.dll
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\bgobs.dll
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
-     D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\obs-backgroundremoval\models\
-     D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\obs-backgroundremoval\models\
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\bgobs\models\
+     D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\bgobs\models\
 
 7. Restart OBS Studio and check the video source filter list for:
 
-     Background Removal
+     Make me look good / Rend-moi beau gosse
      Low-Light Enhancement
 
 8. If OBS still reports version 1.3.x, open the latest OBS log under:
@@ -63,7 +62,7 @@ PortableApps OBS Studio
 
    Search for:
 
-     obs-backgroundremoval
+     bgobs
 
    Delete the old path shown in the log, then copy the new DLL and data again.
 
@@ -71,7 +70,7 @@ PortableApps OBS Studio
 Standard OBS Studio
 -------------------
 
-Copy the `obs-backgroundremoval` folder to your OBS Studio plugins directory.
+Copy the `bgobs` folder to your OBS Studio plugins directory.
 
 The supported default path is:
 

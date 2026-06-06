@@ -1,8 +1,9 @@
-# CONTRIBUTING.md for obs-backgroundremoval
+# CONTRIBUTING.md for BGOBS
 
 ## Legal and Community Guidelines
 
-To keep the `obs-backgroundremoval` project safe and reliable for everyone including its users, its contributors, and its maintainers, those who are involved in development of this project must know the following terms. Whenever we receive your Pull Request, we will explicitly ask you to confirm that your PR conforms to our policy.
+To keep `bgobs` safe and reliable for users, contributors, and maintainers, contributors must understand and follow
+these terms.
 
 ### 1. Licensing and Patent Grant
 
@@ -18,7 +19,7 @@ To ensure the transparency of our codebase, we require all new code to include t
  * SPDX-FileCopyrightText: Copyright (C) [Year] [Author Name] [Email]
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * OBS Plugin: Portrait Background Removal / Virtual Green-screen and Low-Light Enhancement
+ * OBS Plugin: BGOBS / Beau Gosse OBS
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +40,8 @@ To ensure the transparency of our codebase, we require all new code to include t
 
 We always welcome every contribution! To deliver the value of your work to our users in a professional manner, please adhere to the following policies:
 
-- **No Unverified Code**: Do not submit any code that you cannot fully understand and explain. Submitting any raw outputs from LLMs or Generative-AI is strictly prohibited.
+- **No Unverified Code**: Do not submit code that you cannot fully understand, review, and explain. AI-assisted work
+  must be inspected, edited, tested, and owned by the contributor before it is submitted.
 - **Responsibility**: You must take responsibility for your code. Please ensure that your contribution has clean licensing and is reliable. We are here to help you to accomplish this, of course!
 
 ### 4. Developer Certificate of Origin (DCO) and Commit Signing

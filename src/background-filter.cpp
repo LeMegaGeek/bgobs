@@ -38,7 +38,7 @@
 #include "background/mask-post-processing.hpp"
 #include "update-checker/update-checker.h"
 
-struct background_removal_filter : public filter_data, public std::enable_shared_from_this<background_removal_filter> {
+struct bgobs_background_filter : public filter_data, public std::enable_shared_from_this<bgobs_background_filter> {
 	std::string beautyPreset;
 	bool enableThreshold = true;
 	bool stopWhenSourceIsInactive = true;
@@ -51,6 +51,7 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 	float smoothContour = 0.5f;
 	float feather = 0.0f;
 	int maskExpansion = 0;
+	bool showMaskPreview = false;
 
 	cv::Mat backgroundMask;
 	cv::Mat lastBackgroundMask;
@@ -70,17 +71,18 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 
 	std::mutex modelMutex;
 
-	~background_removal_filter() { obs_log(LOG_INFO, "Background removal filter destructor called"); }
+	~bgobs_background_filter() { obs_log(LOG_INFO, "BGOBS background filter destructor called"); }
 };
-
-void background_removal_thread(void *data); // Forward declaration
 
 namespace {
 
-const char *const BGOBS_PRESET_CLEAN = "clean";
-const char *const BGOBS_PRESET_SOFT = "soft";
+const char *const BGOBS_PRESET_NATURAL = "natural";
+const char *const BGOBS_PRESET_STUDIO = "studio";
+const char *const BGOBS_PRESET_CRISP = "crisp";
 const char *const BGOBS_PRESET_PERFORMANCE = "performance";
 const char *const BGOBS_PRESET_CUSTOM = "custom";
+const char *const BGOBS_PRESET_LEGACY_CLEAN = "clean";
+const char *const BGOBS_PRESET_LEGACY_SOFT = "soft";
 
 struct BackgroundBeautyPreset {
 	const char *id;
@@ -98,9 +100,10 @@ struct BackgroundBeautyPreset {
 };
 
 const BackgroundBeautyPreset BGOBS_PRESETS[] = {
-	{BGOBS_PRESET_CLEAN, 0.50, 0.08, 0.35, 0.22, 0.035, 0.55, 0.82, 35.0, 0, 1, 1},
-	{BGOBS_PRESET_SOFT, 0.48, 0.16, 0.45, 0.16, 0.020, 0.70, 0.88, 34.0, 0, 1, 1},
-	{BGOBS_PRESET_PERFORMANCE, 0.52, 0.04, 0.15, 0.10, 0.050, 0.35, 0.65, 38.0, 0, 2, 1},
+	{BGOBS_PRESET_NATURAL, 0.50, 0.10, 0.40, 0.22, 0.030, 0.58, 0.84, 35.0, 0, 1, 1},
+	{BGOBS_PRESET_STUDIO, 0.47, 0.18, 0.55, 0.20, 0.020, 0.74, 0.88, 34.0, 1, 1, 1},
+	{BGOBS_PRESET_CRISP, 0.54, 0.05, 0.28, 0.26, 0.040, 0.40, 0.78, 36.0, 0, 1, 1},
+	{BGOBS_PRESET_PERFORMANCE, 0.52, 0.04, 0.15, 0.10, 0.050, 0.32, 0.65, 38.0, 0, 2, 1},
 };
 
 const BackgroundBeautyPreset *findBeautyPreset(const char *presetId)
@@ -113,6 +116,14 @@ const BackgroundBeautyPreset *findBeautyPreset(const char *presetId)
 		if (strcmp(presetId, preset.id) == 0) {
 			return &preset;
 		}
+	}
+
+	if (strcmp(presetId, BGOBS_PRESET_LEGACY_CLEAN) == 0) {
+		return findBeautyPreset(BGOBS_PRESET_NATURAL);
+	}
+
+	if (strcmp(presetId, BGOBS_PRESET_LEGACY_SOFT) == 0) {
+		return findBeautyPreset(BGOBS_PRESET_STUDIO);
 	}
 
 	return nullptr;
@@ -252,11 +263,14 @@ obs_properties_t *background_filter_properties(void *data)
 
 	obs_property_t *p_beauty_preset = obs_properties_add_list(
 		props, "beauty_preset", obs_module_text("BeautyPreset"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetClean"), BGOBS_PRESET_CLEAN);
-	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetSoft"), BGOBS_PRESET_SOFT);
+	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetNatural"), BGOBS_PRESET_NATURAL);
+	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetStudio"), BGOBS_PRESET_STUDIO);
+	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetCrisp"), BGOBS_PRESET_CRISP);
 	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetPerformance"), BGOBS_PRESET_PERFORMANCE);
 	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetCustom"), BGOBS_PRESET_CUSTOM);
 	obs_property_set_modified_callback(p_beauty_preset, beauty_preset_modified);
+
+	obs_properties_add_bool(props, "show_mask_preview", obs_module_text("ShowMaskPreview"));
 
 	/* Threshold props */
 	obs_property_t *p_enable_threshold =
@@ -393,17 +407,18 @@ obs_properties_t *background_filter_properties(void *data)
 void background_filter_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, "advanced", false);
-	obs_data_set_default_string(settings, "beauty_preset", BGOBS_PRESET_CLEAN);
+	obs_data_set_default_string(settings, "beauty_preset", BGOBS_PRESET_NATURAL);
 	obs_data_set_default_bool(settings, "stop_when_source_is_inactive", true);
 	obs_data_set_default_bool(settings, "enable_threshold", true);
 	obs_data_set_default_double(settings, "threshold", 0.5);
-	obs_data_set_default_double(settings, "edge_softness", 0.08);
-	obs_data_set_default_double(settings, "edge_refinement", 0.35);
+	obs_data_set_default_double(settings, "edge_softness", 0.10);
+	obs_data_set_default_double(settings, "edge_refinement", 0.40);
 	obs_data_set_default_double(settings, "foreground_cleanup", 0.22);
-	obs_data_set_default_double(settings, "contour_filter", 0.035);
-	obs_data_set_default_double(settings, "smooth_contour", 0.55);
+	obs_data_set_default_double(settings, "contour_filter", 0.030);
+	obs_data_set_default_double(settings, "smooth_contour", 0.58);
 	obs_data_set_default_double(settings, "mask_expansion", 0);
 	obs_data_set_default_double(settings, "feather", 0.0);
+	obs_data_set_default_bool(settings, "show_mask_preview", false);
 #if defined(__APPLE__)
 	obs_data_set_default_string(settings, "useGPU", USEGPU_CPU);
 #else
@@ -415,7 +430,7 @@ void background_filter_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "blur_background", 0);
 	obs_data_set_default_int(settings, "numThreads", 1);
 	obs_data_set_default_bool(settings, "enable_focal_blur", false);
-	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.82);
+	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.84);
 	obs_data_set_default_double(settings, "image_similarity_threshold", 35.0);
 	obs_data_set_default_bool(settings, "enable_image_similarity", true);
 	obs_data_set_default_double(settings, "blur_focus_point", 0.1);
@@ -424,15 +439,15 @@ void background_filter_defaults(obs_data_t *settings)
 
 void background_filter_update(void *data, obs_data_t *settings)
 {
-	obs_log(LOG_INFO, "Background filter updated");
+	obs_log(LOG_INFO, "BGOBS background filter updated");
 
 	// Cast to shared_ptr pointer and create a local shared_ptr
-	auto *ptr = static_cast<std::shared_ptr<background_removal_filter> *>(data);
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
 	if (!ptr) {
 		return;
 	}
 
-	std::shared_ptr<background_removal_filter> tf = *ptr;
+	std::shared_ptr<bgobs_background_filter> tf = *ptr;
 	if (!tf) {
 		return;
 	}
@@ -443,6 +458,8 @@ void background_filter_update(void *data, obs_data_t *settings)
 	tf->beautyPreset = beautyPreset ? beautyPreset : BGOBS_PRESET_CUSTOM;
 	if (const BackgroundBeautyPreset *preset = findBeautyPreset(tf->beautyPreset.c_str())) {
 		applyBeautyPreset(settings, *preset);
+		obs_data_set_string(settings, "beauty_preset", preset->id);
+		tf->beautyPreset = preset->id;
 	}
 
 	tf->stopWhenSourceIsInactive = obs_data_get_bool(settings, "stop_when_source_is_inactive");
@@ -456,7 +473,8 @@ void background_filter_update(void *data, obs_data_t *settings)
 	tf->smoothContour = (float)obs_data_get_double(settings, "smooth_contour");
 	tf->maskExpansion = (int)obs_data_get_double(settings, "mask_expansion");
 	tf->feather = (float)obs_data_get_double(settings, "feather");
-	tf->maskEveryXFrames = (int)obs_data_get_int(settings, "mask_every_x_frames");
+	tf->showMaskPreview = obs_data_get_bool(settings, "show_mask_preview");
+	tf->maskEveryXFrames = std::max(1, (int)obs_data_get_int(settings, "mask_every_x_frames"));
 	tf->maskEveryXFramesCount = (int)(0);
 	tf->blurBackground = obs_data_get_int(settings, "blur_background");
 	tf->enableFocalBlur = (float)obs_data_get_bool(settings, "enable_focal_blur");
@@ -543,6 +561,7 @@ void background_filter_update(void *data, obs_data_t *settings)
 	obs_log(LOG_INFO, "  Smooth Contour: %f", tf->smoothContour);
 	obs_log(LOG_INFO, "  Mask Expansion: %d", tf->maskExpansion);
 	obs_log(LOG_INFO, "  Feather: %f", tf->feather);
+	obs_log(LOG_INFO, "  Mask Preview: %s", tf->showMaskPreview ? "true" : "false");
 	obs_log(LOG_INFO, "  Mask Every X Frames: %d", tf->maskEveryXFrames);
 	obs_log(LOG_INFO, "  Enable Image Similarity: %s", tf->enableImageSimilarity ? "true" : "false");
 	obs_log(LOG_INFO, "  Image Similarity Threshold: %f", tf->imageSimilarityThreshold);
@@ -563,28 +582,28 @@ void background_filter_update(void *data, obs_data_t *settings)
 
 void background_filter_activate(void *data)
 {
-	auto *ptr = static_cast<std::shared_ptr<background_removal_filter> *>(data);
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
 	if (!ptr) {
 		return;
 	}
 
-	std::shared_ptr<background_removal_filter> tf = *ptr;
+	std::shared_ptr<bgobs_background_filter> tf = *ptr;
 	if (tf && tf->stopWhenSourceIsInactive) {
-		obs_log(LOG_INFO, "Background filter activated");
+		obs_log(LOG_INFO, "BGOBS background filter activated");
 		tf->isDisabled = false;
 	}
 }
 
 void background_filter_deactivate(void *data)
 {
-	auto *ptr = static_cast<std::shared_ptr<background_removal_filter> *>(data);
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
 	if (!ptr) {
 		return;
 	}
 
-	std::shared_ptr<background_removal_filter> tf = *ptr;
+	std::shared_ptr<bgobs_background_filter> tf = *ptr;
 	if (tf && tf->stopWhenSourceIsInactive) {
-		obs_log(LOG_INFO, "Background filter deactivated");
+		obs_log(LOG_INFO, "BGOBS background filter deactivated");
 		tf->isDisabled = true;
 	}
 }
@@ -593,38 +612,38 @@ void background_filter_deactivate(void *data)
 
 void *background_filter_create(obs_data_t *settings, obs_source_t *source)
 {
-	obs_log(LOG_INFO, "Background filter created");
+	obs_log(LOG_INFO, "BGOBS background filter created");
 	try {
 		// Create the instance as a shared_ptr
-		auto instance = std::make_shared<background_removal_filter>();
+		auto instance = std::make_shared<bgobs_background_filter>();
 
 		instance->source = source;
 		instance->texrender = gs_texrender_create(GS_BGRA, GS_ZS_NONE);
 
-		std::string instanceName{"background-removal-inference"};
+		std::string instanceName{"bgobs-background-inference"};
 		instance->env.reset(new Ort::Env(OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR, instanceName.c_str()));
 
 		instance->modelSelection = MODEL_MEDIAPIPE;
 
 		// Create pointer to shared_ptr for the update call
-		auto ptr = new std::shared_ptr<background_removal_filter>(instance);
+		auto ptr = new std::shared_ptr<bgobs_background_filter>(instance);
 		background_filter_update(ptr, settings);
 
 		// Return the pointer to the shared_ptr
 		// This keeps the reference count at least 1 until destroy is called
 		return ptr;
 	} catch (const std::exception &e) {
-		obs_log(LOG_ERROR, "Failed to create background filter: %s", e.what());
+		obs_log(LOG_ERROR, "Failed to create BGOBS background filter: %s", e.what());
 		return nullptr;
 	}
 }
 
 void background_filter_destroy(void *data)
 {
-	obs_log(LOG_INFO, "Background filter destroyed");
+	obs_log(LOG_INFO, "BGOBS background filter destroyed");
 
 	// Cast back to shared_ptr pointer
-	auto *ptr = static_cast<std::shared_ptr<background_removal_filter> *>(data);
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
 	if (ptr) {
 		if (*ptr) {
 			// Mark as disabled to prevent further processing
@@ -646,11 +665,11 @@ void background_filter_destroy(void *data)
 	}
 }
 
-static void postProcessImageForBackground(struct background_removal_filter *tf, const cv::Mat &outputImage,
+static void postProcessImageForBackground(struct bgobs_background_filter *tf, const cv::Mat &outputImage,
 					  const cv::Mat &sourceImage, const cv::Size &targetSize,
 					  cv::Mat &backgroundMask)
 {
-	background_removal::MaskPostProcessingSettings settings;
+	bgobs::MaskPostProcessingSettings settings;
 	settings.enableThreshold = tf->enableThreshold;
 	settings.threshold = tf->threshold;
 	settings.edgeSoftness = tf->edgeSoftness;
@@ -660,12 +679,11 @@ static void postProcessImageForBackground(struct background_removal_filter *tf, 
 	settings.feather = tf->feather;
 	settings.maskExpansion = tf->maskExpansion;
 
-	backgroundMask = background_removal::postProcessForegroundMask(outputImage, targetSize, settings);
+	backgroundMask = bgobs::postProcessForegroundMask(outputImage, targetSize, settings);
 
-	background_removal::ImageGuidedMaskRefinementSettings refinementSettings;
+	bgobs::ImageGuidedMaskRefinementSettings refinementSettings;
 	refinementSettings.edgeRefinement = tf->edgeRefinement;
-	backgroundMask =
-		background_removal::refineBackgroundMaskWithImage(backgroundMask, sourceImage, refinementSettings);
+	backgroundMask = bgobs::refineBackgroundMaskWithImage(backgroundMask, sourceImage, refinementSettings);
 }
 
 void background_filter_video_tick(void *data, float seconds)
@@ -673,7 +691,7 @@ void background_filter_video_tick(void *data, float seconds)
 	UNUSED_PARAMETER(seconds);
 
 	// Cast to shared_ptr pointer and create a local shared_ptr
-	auto *ptr = static_cast<std::shared_ptr<background_removal_filter> *>(data);
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
 	if (!ptr) {
 		return;
 	}
@@ -681,7 +699,7 @@ void background_filter_video_tick(void *data, float seconds)
 	// Create a local shared_ptr
 	// This guarantees the object stays alive for the duration of this function scope
 	// even if filter_destroy is called on the main thread
-	std::shared_ptr<background_removal_filter> tf = *ptr;
+	std::shared_ptr<bgobs_background_filter> tf = *ptr;
 
 	if (!tf || tf->isDisabled) {
 		return;
@@ -757,10 +775,10 @@ void background_filter_video_tick(void *data, float seconds)
 				return;
 			}
 
-			background_removal::TemporalMaskSmoothingSettings temporalSettings;
+			bgobs::TemporalMaskSmoothingSettings temporalSettings;
 			temporalSettings.temporalSmoothFactor = tf->temporalSmoothFactor;
-			backgroundMask = background_removal::smoothTemporalBackgroundMask(
-				backgroundMask, tf->lastBackgroundMask, temporalSettings);
+			backgroundMask = bgobs::smoothTemporalBackgroundMask(backgroundMask, tf->lastBackgroundMask,
+									     temporalSettings);
 
 			tf->lastBackgroundMask = backgroundMask.clone();
 
@@ -778,7 +796,7 @@ void background_filter_video_tick(void *data, float seconds)
 	}
 }
 
-static gs_texture_t *blur_background(std::shared_ptr<background_removal_filter> tf, uint32_t width, uint32_t height,
+static gs_texture_t *blur_background(std::shared_ptr<bgobs_background_filter> tf, uint32_t width, uint32_t height,
 				     gs_texture_t *alphaTexture)
 {
 	if (tf->blurBackground == 0 || !tf->kawaseBlurEffect) {
@@ -835,13 +853,13 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 	UNUSED_PARAMETER(_effect);
 
 	// Cast to shared_ptr pointer and create a local shared_ptr
-	auto *ptr = static_cast<std::shared_ptr<background_removal_filter> *>(data);
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
 	if (!ptr) {
 		return;
 	}
 
 	// Create a local shared_ptr
-	std::shared_ptr<background_removal_filter> tf = *ptr;
+	std::shared_ptr<bgobs_background_filter> tf = *ptr;
 
 	if (!tf || tf->isDisabled) {
 		if (tf && tf->source) {
@@ -890,8 +908,8 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 		}
 	}
 
-	// Output the masked image
-	gs_texture_t *blurredTexture = blur_background(tf, width, height, alphaTexture);
+	// Output the masked image. Mask preview is a diagnostic path and should not spend time rendering blur passes.
+	gs_texture_t *blurredTexture = tf->showMaskPreview ? nullptr : blur_background(tf, width, height, alphaTexture);
 
 	if (!obs_source_process_filter_begin(tf->source, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
 		if (tf->source) {
@@ -915,7 +933,9 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 	gs_reset_blend_state();
 
 	const char *techName;
-	if (tf->blurBackground > 0) {
+	if (tf->showMaskPreview) {
+		techName = "DrawMaskPreview";
+	} else if (tf->blurBackground > 0) {
 		if (tf->enableFocalBlur)
 			techName = "DrawWithFocalBlur";
 		else

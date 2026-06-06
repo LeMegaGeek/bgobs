@@ -1,8 +1,8 @@
 # Building with a newer version of CUDA (Linux)
-This guide provides instructions for compiling the `obs-backgroundremoval` plugin on Linux, specifically for users who have a newer version of the NVIDIA CUDA Toolkit installed than what is officially supported by the ONNXRuntime pre-compiled binaries.
+This guide provides instructions for compiling the `bgobs` plugin on Linux, specifically for users who have a newer version of the NVIDIA CUDA Toolkit installed than what is officially supported by the ONNXRuntime pre-compiled binaries.
 
 ## Problem
-The `obs-backgroundremoval` plugin relies on ONNXRuntime for AI processing. The pre-built versions of ONNXRuntime are often compiled for older CUDA versions. When you have a newer CUDA toolkit, this mismatch can cause errors in OBS, such as:
+The `bgobs` plugin relies on ONNXRuntime for AI processing. The pre-built versions of ONNXRuntime are often compiled for older CUDA versions. When you have a newer CUDA toolkit, this mismatch can cause errors in OBS, such as:
 
 ```
 [ONNXRuntimeError] : 1 : FAIL : Failed to load library libonnxruntime_providers_tensorrt.so with error: libcublas.so.12: cannot open shared object file: No such file or directory
@@ -102,15 +102,15 @@ sudo ldconfig
 ```
 The `ldconfig` command refreshes the shared library cache.
 
-## 3. Compile obs-backgroundremoval
+## 3. Compile bgobs
 
 With your custom version of ONNXRuntime installed, you can now compile the OBS plugin.
 
 ### Clone and Build
 
 ```bash
-git clone https://github.com/royshil/obs-backgroundremoval.git
-cd obs-backgroundremoval
+git clone https://github.com/LeMegaGeek/bgobs.git
+cd bgobs
 ```
 
 Now, run CMake to prepare the build and then install it.
@@ -124,7 +124,7 @@ sudo cmake --install build
 
 ## 4. Verification
 
-If the steps were completed successfully, the `obs-backgroundremoval` plugin is now installed. Launch OBS Studio, and you should find the "Background Removal" filter available when you right-click on a video source and select "Filters". It should now function correctly without the previous CUDA-related errors.
+If the steps were completed successfully, the `bgobs` plugin is now installed. Launch OBS Studio, and you should find the "BGOBS" filter available when you right-click on a video source and select "Filters". It should now function correctly without the previous CUDA-related errors.
 
 ---
 

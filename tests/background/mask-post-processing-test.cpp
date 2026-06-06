@@ -35,9 +35,9 @@ bool expectRange(const cv::Mat &image, int row, int col, int minValue, int maxVa
 	return false;
 }
 
-background_removal::MaskPostProcessingSettings baseSettings()
+bgobs::MaskPostProcessingSettings baseSettings()
 {
-	background_removal::MaskPostProcessingSettings settings;
+	bgobs::MaskPostProcessingSettings settings;
 	settings.enableThreshold = true;
 	settings.threshold = 0.5f;
 	settings.edgeSoftness = 0.0f;
@@ -61,7 +61,7 @@ int main()
 	foreground.at<uint8_t>(0, 4) = 255;
 
 	auto settings = baseSettings();
-	cv::Mat hardMask = background_removal::postProcessForegroundMask(foreground, foreground.size(), settings);
+	cv::Mat hardMask = bgobs::postProcessForegroundMask(foreground, foreground.size(), settings);
 	bool success = true;
 	success &= expectPixel(hardMask, 0, 0, 255, "hard background low confidence");
 	success &= expectPixel(hardMask, 0, 1, 255, "hard background below threshold");
@@ -70,12 +70,12 @@ int main()
 	success &= expectPixel(hardMask, 0, 4, 0, "hard foreground high confidence");
 
 	settings.edgeSoftness = 0.5f;
-	cv::Mat softMask = background_removal::postProcessForegroundMask(foreground, foreground.size(), settings);
+	cv::Mat softMask = bgobs::postProcessForegroundMask(foreground, foreground.size(), settings);
 	success &= expectPixel(softMask, 0, 0, 255, "soft background outside transition");
 	success &= expectRange(softMask, 0, 2, 1, 254, "soft alpha inside transition");
 	success &= expectPixel(softMask, 0, 4, 0, "soft foreground outside transition");
 
-	cv::Mat resizedMask = background_removal::postProcessForegroundMask(foreground, cv::Size(10, 3), settings);
+	cv::Mat resizedMask = bgobs::postProcessForegroundMask(foreground, cv::Size(10, 3), settings);
 	if (resizedMask.size() != cv::Size(10, 3)) {
 		std::cerr << "resize target: expected 10x3, got " << resizedMask.cols << "x" << resizedMask.rows
 			  << "\n";
@@ -84,8 +84,7 @@ int main()
 
 	settings = baseSettings();
 	settings.enableThreshold = false;
-	cv::Mat noThresholdMask =
-		background_removal::postProcessForegroundMask(foreground, foreground.size(), settings);
+	cv::Mat noThresholdMask = bgobs::postProcessForegroundMask(foreground, foreground.size(), settings);
 	success &= expectPixel(noThresholdMask, 0, 0, 255, "no-threshold background");
 	success &= expectPixel(noThresholdMask, 0, 2, 127, "no-threshold alpha inversion");
 	success &= expectPixel(noThresholdMask, 0, 4, 0, "no-threshold foreground");
@@ -95,8 +94,8 @@ int main()
 	foregroundWithSpeck.at<uint8_t>(2, 2) = 0;
 	settings = baseSettings();
 	settings.contourFilter = 0.1f;
-	cv::Mat filteredSpeckMask = background_removal::postProcessForegroundMask(foregroundWithSpeck,
-										  foregroundWithSpeck.size(), settings);
+	cv::Mat filteredSpeckMask =
+		bgobs::postProcessForegroundMask(foregroundWithSpeck, foregroundWithSpeck.size(), settings);
 	success &= expectPixel(filteredSpeckMask, 0, 0, 255, "large background component");
 	success &= expectPixel(filteredSpeckMask, 2, 2, 0, "small background component");
 
@@ -105,7 +104,7 @@ int main()
 	settings = baseSettings();
 	settings.foregroundCleanup = 0.15f;
 	cv::Mat cleanedHoleMask =
-		background_removal::postProcessForegroundMask(foregroundWithHole, foregroundWithHole.size(), settings);
+		bgobs::postProcessForegroundMask(foregroundWithHole, foregroundWithHole.size(), settings);
 	success &= expectPixel(cleanedHoleMask, 3, 3, 0, "foreground cleanup removes background pinhole");
 
 	cv::Mat previousBackground(1, 2, CV_8UC1);
@@ -114,10 +113,10 @@ int main()
 	cv::Mat currentBackground(1, 2, CV_8UC1);
 	currentBackground.at<uint8_t>(0, 0) = 192;
 	currentBackground.at<uint8_t>(0, 1) = 64;
-	background_removal::TemporalMaskSmoothingSettings temporalSettings;
+	bgobs::TemporalMaskSmoothingSettings temporalSettings;
 	temporalSettings.temporalSmoothFactor = 0.8f;
-	cv::Mat temporalMask = background_removal::smoothTemporalBackgroundMask(currentBackground, previousBackground,
-										temporalSettings);
+	cv::Mat temporalMask =
+		bgobs::smoothTemporalBackgroundMask(currentBackground, previousBackground, temporalSettings);
 	success &= expectRange(temporalMask, 0, 0, 95, 105, "temporal smoothing protects foreground from loss");
 	success &= expectRange(temporalMask, 0, 1, 68, 78, "temporal smoothing recovers foreground quickly");
 
@@ -127,20 +126,20 @@ int main()
 	hardBoundaryMask.at<uint8_t>(0, 2) = 255;
 	hardBoundaryMask.at<uint8_t>(0, 3) = 255;
 	hardBoundaryMask.at<uint8_t>(0, 4) = 255;
-	background_removal::ImageGuidedMaskRefinementSettings refinementSettings;
+	bgobs::ImageGuidedMaskRefinementSettings refinementSettings;
 	refinementSettings.edgeRefinement = 1.0f;
 
 	cv::Mat flatColorImage(1, 5, CV_8UC3, cv::Scalar(64, 64, 64));
 	cv::Mat flatRefinedMask =
-		background_removal::refineBackgroundMaskWithImage(hardBoundaryMask, flatColorImage, refinementSettings);
+		bgobs::refineBackgroundMaskWithImage(hardBoundaryMask, flatColorImage, refinementSettings);
 	success &= expectRange(flatRefinedMask, 0, 1, 80, 130, "edge refinement softens weak visual edge");
 	success &= expectRange(flatRefinedMask, 0, 2, 135, 180, "edge refinement blends weak visual edge");
 
 	cv::Mat strongEdgeImage(1, 5, CV_8UC3, cv::Scalar(255, 255, 255));
 	strongEdgeImage.at<cv::Vec3b>(0, 0) = cv::Vec3b(0, 0, 0);
 	strongEdgeImage.at<cv::Vec3b>(0, 1) = cv::Vec3b(0, 0, 0);
-	cv::Mat strongEdgeRefinedMask = background_removal::refineBackgroundMaskWithImage(
-		hardBoundaryMask, strongEdgeImage, refinementSettings);
+	cv::Mat strongEdgeRefinedMask =
+		bgobs::refineBackgroundMaskWithImage(hardBoundaryMask, strongEdgeImage, refinementSettings);
 	success &= expectRange(strongEdgeRefinedMask, 0, 1, 0, 5, "edge refinement preserves strong visual edge");
 	success &= expectRange(strongEdgeRefinedMask, 0, 2, 250, 255, "edge refinement preserves foreground side");
 

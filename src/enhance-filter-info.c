@@ -8,7 +8,7 @@
 #include "enhance-filter.h"
 
 struct obs_source_info enhance_filter_info = {
-	.id = "enhanceportrait",
+	.id = "bgobs_enhance_portrait",
 	.type = OBS_SOURCE_TYPE_FILTER,
 	.output_flags = OBS_SOURCE_VIDEO,
 	.get_name = enhance_filter_getname,

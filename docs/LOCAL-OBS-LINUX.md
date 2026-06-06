@@ -1,7 +1,7 @@
 # Local Linux OBS Build
 
-This is the private local build workflow used for testing `obs-backgroundremoval` against the OBS installation on this
-machine. It keeps the generated build tree under `build/local-obs` and the local dependency sysroot under `.deps`.
+This is the private local build workflow used for testing `bgobs` against the OBS installation on this machine. It
+keeps the generated build tree under `build/local-obs` and the local dependency sysroot under `.deps`.
 
 ## Configure
 
@@ -55,8 +55,8 @@ sudo install -m 0755 .deps/onnxruntime/lib/libonnxruntime.so* /usr/lib/x86_64-li
 sudo install -m 0755 .deps/onnxruntime/lib/libonnxruntime_providers*.so /usr/lib/x86_64-linux-gnu/obs-plugins/
 ```
 
-After installation, start OBS from a terminal and confirm that the Background Removal filter loads. The filter logs the
-effective mask settings when it is created.
+After installation, start OBS from a terminal and confirm that BGOBS loads. The filter logs the effective mask settings
+when it is created.
 
 ---
 

@@ -1,8 +1,8 @@
 {
   "display_name": "BGOBS",
-  "id": "com.royshilkrot.obs-backgroundremoval",
-  "version": "0.1.1",
-  "name": "obs-backgroundremoval",
+  "id": "net.lemegageek.bgobs",
+  "version": "0.2.0",
+  "name": "bgobs",
   "description": "BGOBS: Beau Gosse OBS",
   "long_description": "A BGOBS plugin for OBS Studio that removes and softens webcam backgrounds.",
   "os_arch": "windows-x64, macos, ubuntu-x86_64",

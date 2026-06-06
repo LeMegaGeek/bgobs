@@ -16,7 +16,7 @@
 #include <cmath>
 #include <vector>
 
-namespace background_removal {
+namespace bgobs {
 namespace {
 
 struct PixelColor {
@@ -294,4 +294,4 @@ cv::Mat refineBackgroundMaskWithImage(const cv::Mat &backgroundMask, const cv::M
 	return refinedMask;
 }
 
-} // namespace background_removal
+} // namespace bgobs

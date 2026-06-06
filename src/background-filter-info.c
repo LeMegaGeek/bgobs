@@ -7,8 +7,8 @@
 
 #include "background-filter.h"
 
-struct obs_source_info background_removal_filter_info = {
-	.id = "background_removal",
+struct obs_source_info bgobs_background_filter_info = {
+	.id = "bgobs_background_removal",
 	.type = OBS_SOURCE_TYPE_FILTER,
 	.output_flags = OBS_SOURCE_VIDEO,
 	.get_name = background_filter_getname,
