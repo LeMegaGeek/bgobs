@@ -2,7 +2,9 @@
 
 BGOBS, pour **Beau Gosse OBS**, est un plugin OBS Studio qui retire ou floute l'arriere-plan d'une webcam tout en cherchant un contour plus propre autour du sujet.
 
-La version `0.2.0` donne enfin au plugin sa propre identite technique. BGOBS n'est plus charge par OBS comme `obs-backgroundremoval` : le module, le paquet, le dossier de donnees et les IDs de filtres utilisent maintenant `bgobs`. L'ancien plugin peut donc etre retire proprement, sans collision de sources OBS.
+La version `0.3.0` ajoute une source **CaCam USB** pour utiliser un telephone
+Android comme camera OBS sans partage de connexion USB, sans ADB et sans
+modifier les routes reseau du PC.
 
 ## Ce Que Fait BGOBS
 
@@ -12,8 +14,23 @@ La version `0.2.0` donne enfin au plugin sa propre identite technique. BGOBS n'e
 - applique un lissage temporel pour limiter les contours qui tremblent ;
 - affine les bords avec l'image source pour reduire les halos ;
 - conserve le flou d'arriere-plan et l'amelioration basse lumiere du projet d'origine.
+- ajoute une source OBS **CaCam USB** compatible avec le preset `USB BGOBS` de
+  l'application Android CaCam.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
+
+## Version 0.3.0
+
+Cette version ajoute l'integration CaCam USB :
+
+- nouvelle source OBS : `bgobs_cacam_usb_source` ;
+- activation Android Open Accessory cote PC via `libusb` charge dynamiquement ;
+- reception de frames NV21 depuis CaCam Android ;
+- conversion YUV vers BGRA avec OpenCV avant sortie video OBS ;
+- aucun partage de connexion USB et aucun debogage USB requis.
+
+Le filtre BGOBS reste separe : ajoute la source **CaCam USB**, puis ajoute le
+filtre **Rend-moi beau gosse** sur cette source.
 
 ## Version 0.2.0
 
@@ -34,12 +51,22 @@ Le C++ garde l'integration OBS, les textures, les proprietes et ONNX Runtime. Ru
 
 ## Utilisation Dans OBS
 
+Avec une source existante :
+
 1. Ajoute ou selectionne une source video.
 2. Ouvre les filtres de la source.
 3. Ajoute **Rend-moi beau gosse**.
 4. Choisis un style BGOBS.
 5. Active **Apercu du masque** si tu veux regler le contour finement.
 6. Desactive l'apercu quand le resultat te convient.
+
+Avec CaCam en USB direct :
+
+1. Branche le telephone Android au PC en USB.
+2. Dans CaCam, choisis le preset **USB BGOBS** et demarre le flux.
+3. Dans OBS, ajoute la source **CaCam USB**.
+4. Accepte l'autorisation USB sur le telephone si Android la demande.
+5. Ajoute le filtre **Rend-moi beau gosse** sur la source **CaCam USB**.
 
 Une lumiere frontale douce reste souvent plus efficace qu'un modele plus lourd. Les contours difficiles viennent souvent d'un contre-jour, d'un fond trop proche de la couleur des cheveux, ou d'une webcam trop compressee.
 
@@ -64,7 +91,7 @@ Les bibliotheques ONNX Runtime doivent etre accessibles au chargement du plugin.
 └── libonnxruntime_providers_shared.so
 ```
 
-Si l'ancien paquet systeme est encore installe, OBS peut aussi afficher l'ancien filtre. Il n'entre plus en collision avec BGOBS `0.2.0`, mais il vaut mieux le retirer :
+Si l'ancien paquet systeme est encore installe, OBS peut aussi afficher l'ancien filtre. Il n'entre plus en collision avec BGOBS `0.3.0`, mais il vaut mieux le retirer :
 
 ```bash
 sudo apt remove obs-backgroundremoval

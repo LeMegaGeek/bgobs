@@ -163,6 +163,7 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
   if(NOT TARGET OpenCV::opencv_imgproc)
     add_library(OpenCV::opencv_imgproc ALIAS opencv_imgproc)
   endif()
+
 endblock()
 
 block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIME_DELAYLOAD)
@@ -292,6 +293,8 @@ set(
 
 set(ENHANCE_FILTER_SOURCES src/enhance-filter.cpp src/enhance-filter-info.c)
 
+set(CACAM_USB_SOURCE_SOURCES src/cacam-usb-source.cpp src/cacam-usb-source-info.c)
+
 set(
   PLUGIN_SOURCES
   src/plugin-main.c
@@ -303,6 +306,7 @@ set(
   src/update-checker/update-checker.cpp
   ${BACKGROUND_FILTER_SOURCES}
   ${ENHANCE_FILTER_SOURCES}
+  ${CACAM_USB_SOURCE_SOURCES}
 )
 
 add_library(${CMAKE_PROJECT_NAME} MODULE)

@@ -21,6 +21,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 extern struct obs_source_info bgobs_background_filter_info;
 extern struct obs_source_info enhance_filter_info;
+extern struct obs_source_info cacam_usb_source_info;
 
 static void log_module_paths(void)
 {
@@ -51,6 +52,7 @@ bool obs_module_load(void)
 {
 	obs_register_source(&bgobs_background_filter_info);
 	obs_register_source(&enhance_filter_info);
+	obs_register_source(&cacam_usb_source_info);
 	obs_log(LOG_INFO, "BGOBS loaded successfully (version %s, author LeMegaGeek)", PLUGIN_VERSION);
 	log_module_paths();
 
