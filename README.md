@@ -19,6 +19,11 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.2
+
+- Corrige la lecture USB BGOBS quand Android envoie l'en-tete et la frame dans
+  le meme transfert bulk libusb.
+
 ## Version 0.3.1
 
 - Ajoute la release Windows x64 officielle de BGOBS, compatible avec OBS portable.

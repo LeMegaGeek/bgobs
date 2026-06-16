@@ -132,6 +132,7 @@ constexpr uint8_t CACAM_TYPE_NV21 = 3;
 constexpr size_t CACAM_HEADER_SIZE = 20;
 constexpr size_t CACAM_FRAME_METADATA_SIZE = 16;
 constexpr uint32_t MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
+constexpr size_t BULK_READ_BUFFER_SIZE = 64 * 1024;
 
 constexpr int BULK_TIMEOUT_MS = 1000;
 constexpr int CONTROL_TIMEOUT_MS = 1000;
@@ -403,23 +404,88 @@ bool request_first_android_accessory(UsbApi &api, libusb_context *context)
 	return requested;
 }
 
-int read_exact(UsbApi &api, AccessoryConnection &connection, unsigned char *buffer, size_t size,
-	       const std::atomic<bool> &stop_requested)
-{
-	size_t offset = 0;
-	while (offset < size && !stop_requested.load()) {
+class BulkReader {
+public:
+	BulkReader(UsbApi &api_, AccessoryConnection &connection_, const std::atomic<bool> &stop_requested_)
+		: api(api_), connection(connection_), stop_requested(stop_requested_)
+	{
+		buffer.reserve(BULK_READ_BUFFER_SIZE);
+	}
+
+	int read_exact(unsigned char *output, size_t size)
+	{
+		size_t copied = 0;
+		while (copied < size && !stop_requested.load()) {
+			const size_t available = buffer.size() - buffer_offset;
+			if (available == 0) {
+				buffer.clear();
+				buffer_offset = 0;
+				const int fill_result = fill();
+				if (fill_result == LIBUSB_ERROR_TIMEOUT)
+					continue;
+				if (fill_result < 0)
+					return fill_result;
+				continue;
+			}
+
+			const size_t count = std::min(available, size - copied);
+			std::memcpy(output + copied, buffer.data() + buffer_offset, count);
+			buffer_offset += count;
+			copied += count;
+
+			if (buffer_offset == buffer.size()) {
+				buffer.clear();
+				buffer_offset = 0;
+			}
+		}
+		return stop_requested.load() ? -1 : 0;
+	}
+
+private:
+	UsbApi &api;
+	AccessoryConnection &connection;
+	const std::atomic<bool> &stop_requested;
+	std::vector<unsigned char> buffer;
+	size_t buffer_offset = 0;
+
+	int fill()
+	{
+		std::vector<unsigned char> chunk(BULK_READ_BUFFER_SIZE);
 		int transferred = 0;
-		const int remaining = static_cast<int>(std::min<size_t>(size - offset, 64 * 1024));
-		const int result = api.bulk_transfer(connection.handle, connection.endpoint_in, buffer + offset, remaining,
-						     &transferred, BULK_TIMEOUT_MS);
-		if (result == LIBUSB_ERROR_TIMEOUT)
-			continue;
+		const int result = api.bulk_transfer(connection.handle, connection.endpoint_in, chunk.data(),
+						     static_cast<int>(chunk.size()), &transferred, BULK_TIMEOUT_MS);
 		if (result < 0)
 			return result;
 		if (transferred > 0)
-			offset += static_cast<size_t>(transferred);
+			buffer.insert(buffer.end(), chunk.begin(), chunk.begin() + transferred);
+		return result;
 	}
-	return stop_requested.load() ? -1 : 0;
+};
+
+int read_header(BulkReader &reader, unsigned char *header, size_t size)
+{
+	if (size < 4)
+		return -1;
+
+	const unsigned char magic[] = {'C', 'C', 'A', 'M'};
+	size_t matched = 0;
+	while (matched < sizeof(magic)) {
+		unsigned char byte = 0;
+		const int result = reader.read_exact(&byte, 1);
+		if (result < 0)
+			return result;
+
+		if (byte == magic[matched]) {
+			header[matched++] = byte;
+		} else if (byte == magic[0]) {
+			header[0] = byte;
+			matched = 1;
+		} else {
+			matched = 0;
+		}
+	}
+
+	return reader.read_exact(header + sizeof(magic), size - sizeof(magic));
 }
 
 class CacamUsbSource {
@@ -523,8 +589,9 @@ private:
 	void read_stream(UsbApi &api, AccessoryConnection &connection)
 	{
 		std::vector<unsigned char> header(CACAM_HEADER_SIZE);
+		BulkReader reader(api, connection, stop_requested);
 		while (!stop_requested.load()) {
-			const int header_result = read_exact(api, connection, header.data(), header.size(), stop_requested);
+			const int header_result = read_header(reader, header.data(), header.size());
 			if (header_result < 0)
 				break;
 
@@ -536,12 +603,11 @@ private:
 
 			if (magic != CACAM_MAGIC || version != CACAM_PROTOCOL_VERSION || payload_size > MAX_PAYLOAD_SIZE) {
 				obs_log(LOG_WARNING, "[CaCam USB] Invalid frame header");
-				break;
+				continue;
 			}
 
 			std::vector<unsigned char> payload(payload_size);
-			if (payload_size > 0 &&
-			    read_exact(api, connection, payload.data(), payload.size(), stop_requested) < 0) {
+			if (payload_size > 0 && reader.read_exact(payload.data(), payload.size()) < 0) {
 				break;
 			}
 
