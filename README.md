@@ -2,7 +2,7 @@
 
 BGOBS, pour **Beau Gosse OBS**, est un plugin OBS Studio qui retire ou floute l'arriere-plan d'une webcam tout en cherchant un contour plus propre autour du sujet.
 
-La version `0.3.0` ajoute une source **CaCam USB** pour utiliser un telephone
+Depuis la version `0.3.0`, BGOBS ajoute une source **CaCam USB** pour utiliser un telephone
 Android comme camera OBS sans partage de connexion USB, sans ADB et sans
 modifier les routes reseau du PC.
 
@@ -18,6 +18,10 @@ modifier les routes reseau du PC.
   l'application Android CaCam.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
+
+## Version 0.3.1
+
+- Ajoute la release Windows x64 officielle de BGOBS, compatible avec OBS portable.
 
 ## Version 0.3.0
 
