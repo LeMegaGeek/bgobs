@@ -133,7 +133,7 @@ constexpr uint8_t CACAM_TYPE_NV21 = 3;
 constexpr size_t CACAM_HEADER_SIZE = 20;
 constexpr size_t CACAM_FRAME_METADATA_SIZE = 16;
 constexpr uint32_t MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
-constexpr size_t BULK_READ_BUFFER_SIZE = 64 * 1024;
+constexpr size_t BULK_READ_BUFFER_SIZE = 1024 * 1024;
 
 constexpr int BULK_TIMEOUT_MS = 1000;
 constexpr int CONTROL_TIMEOUT_MS = 1000;
@@ -442,6 +442,7 @@ public:
 		: api(api_), connection(connection_), stop_requested(stop_requested_)
 	{
 		buffer.reserve(BULK_READ_BUFFER_SIZE);
+		read_buffer.resize(BULK_READ_BUFFER_SIZE);
 	}
 
 	int read_exact(unsigned char *output, size_t size)
@@ -478,18 +479,18 @@ private:
 	AccessoryConnection &connection;
 	const std::atomic<bool> &stop_requested;
 	std::vector<unsigned char> buffer;
+	std::vector<unsigned char> read_buffer;
 	size_t buffer_offset = 0;
 
 	int fill()
 	{
-		std::vector<unsigned char> chunk(BULK_READ_BUFFER_SIZE);
 		int transferred = 0;
-		const int result = api.bulk_transfer(connection.handle, connection.endpoint_in, chunk.data(),
-						     static_cast<int>(chunk.size()), &transferred, BULK_TIMEOUT_MS);
+		const int result = api.bulk_transfer(connection.handle, connection.endpoint_in, read_buffer.data(),
+						     static_cast<int>(read_buffer.size()), &transferred, BULK_TIMEOUT_MS);
 		if (result < 0)
 			return result;
 		if (transferred > 0)
-			buffer.insert(buffer.end(), chunk.begin(), chunk.begin() + transferred);
+			buffer.assign(read_buffer.begin(), read_buffer.begin() + transferred);
 		return result;
 	}
 };

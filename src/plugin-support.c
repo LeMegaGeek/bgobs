@@ -11,7 +11,7 @@
 extern void blogva(int log_level, const char *format, va_list args);
 
 const char *PLUGIN_NAME = "bgobs";
-const char *PLUGIN_VERSION = "0.3.3";
+const char *PLUGIN_VERSION = "0.3.4";
 
 void obs_log(int log_level, const char *format, ...)
 {

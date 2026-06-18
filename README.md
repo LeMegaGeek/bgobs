@@ -19,6 +19,15 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.4
+
+- Reduit la latence de la source **CaCam USB** en lisant le flux USB avec un
+  buffer libusb plus large et reutilise.
+- Complete CaCam `0.9.5`, qui envoie moins de pixels bruts et jette les frames
+  USB obsoletes cote telephone.
+- Conserve le mode HTTP/RTSP existant : seule la source directe **CaCam USB**
+  change.
+
 ## Version 0.3.3
 
 - Corrige l'image figee en USB BGOBS dans OBS en utilisant l'horloge video
