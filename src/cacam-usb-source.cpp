@@ -13,6 +13,7 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -169,7 +170,13 @@ struct UsbApi {
 			return true;
 
 #ifdef _WIN32
-		library = LoadLibraryA("libusb-1.0.dll");
+		const std::string directory = module_directory();
+		if (!directory.empty()) {
+			const std::string path = directory + "\\libusb-1.0.dll";
+			library = LoadLibraryA(path.c_str());
+		}
+		if (!library)
+			library = LoadLibraryA("libusb-1.0.dll");
 #else
 		library = dlopen("libusb-1.0.so.0", RTLD_NOW | RTLD_LOCAL);
 		if (!library)
@@ -178,18 +185,22 @@ struct UsbApi {
 		if (!library)
 			return false;
 
-		return loadSymbol(init, "libusb_init") && loadSymbol(exit, "libusb_exit") &&
-		       loadSymbol(get_device_list, "libusb_get_device_list") &&
-		       loadSymbol(free_device_list, "libusb_free_device_list") &&
-		       loadSymbol(get_device_descriptor, "libusb_get_device_descriptor") && loadSymbol(open, "libusb_open") &&
-		       loadSymbol(close, "libusb_close") && loadSymbol(control_transfer, "libusb_control_transfer") &&
-		       loadSymbol(get_active_config_descriptor, "libusb_get_active_config_descriptor") &&
-		       loadSymbol(free_config_descriptor, "libusb_free_config_descriptor") &&
-		       loadSymbol(claim_interface, "libusb_claim_interface") &&
-		       loadSymbol(release_interface, "libusb_release_interface") &&
-		       loadSymbol(bulk_transfer, "libusb_bulk_transfer") &&
-		       loadSymbol(kernel_driver_active, "libusb_kernel_driver_active") &&
-		       loadSymbol(detach_kernel_driver, "libusb_detach_kernel_driver");
+		const bool symbols_loaded = loadSymbol(init, "libusb_init") && loadSymbol(exit, "libusb_exit") &&
+					    loadSymbol(get_device_list, "libusb_get_device_list") &&
+					    loadSymbol(free_device_list, "libusb_free_device_list") &&
+					    loadSymbol(get_device_descriptor, "libusb_get_device_descriptor") &&
+					    loadSymbol(open, "libusb_open") && loadSymbol(close, "libusb_close") &&
+					    loadSymbol(control_transfer, "libusb_control_transfer") &&
+					    loadSymbol(get_active_config_descriptor, "libusb_get_active_config_descriptor") &&
+					    loadSymbol(free_config_descriptor, "libusb_free_config_descriptor") &&
+					    loadSymbol(claim_interface, "libusb_claim_interface") &&
+					    loadSymbol(release_interface, "libusb_release_interface") &&
+					    loadSymbol(bulk_transfer, "libusb_bulk_transfer") &&
+					    loadSymbol(kernel_driver_active, "libusb_kernel_driver_active") &&
+					    loadSymbol(detach_kernel_driver, "libusb_detach_kernel_driver");
+		if (!symbols_loaded)
+			unload();
+		return symbols_loaded;
 	}
 
 	void unload()
@@ -213,6 +224,27 @@ struct UsbApi {
 #endif
 		return target != nullptr;
 	}
+
+#ifdef _WIN32
+	static std::string module_directory()
+	{
+		HMODULE module = nullptr;
+		if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+						GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+					reinterpret_cast<LPCSTR>(&module_directory), &module)) {
+			return {};
+		}
+
+		char path[MAX_PATH] = {};
+		const DWORD length = GetModuleFileNameA(module, path, static_cast<DWORD>(sizeof(path)));
+		if (length == 0 || length >= sizeof(path))
+			return {};
+
+		std::string value(path, length);
+		const size_t separator = value.find_last_of("\\/");
+		return separator == std::string::npos ? std::string{} : value.substr(0, separator);
+	}
+#endif
 };
 
 struct AccessoryConnection {
@@ -527,6 +559,8 @@ private:
 	std::atomic<bool> stop_requested{false};
 	std::atomic<uint32_t> width{1280};
 	std::atomic<uint32_t> height{720};
+	std::array<std::vector<unsigned char>, 3> video_buffers;
+	size_t video_buffer_index = 0;
 	bool auto_connect = true;
 
 	void start()
@@ -638,7 +672,10 @@ private:
 		auto *frame_data = const_cast<unsigned char *>(payload.data() + CACAM_FRAME_METADATA_SIZE);
 		const cv::Mat nv21(static_cast<int>(frame_height + frame_height / 2), static_cast<int>(frame_width), CV_8UC1,
 				   frame_data);
-		cv::Mat bgra;
+		auto &video_buffer = video_buffers[video_buffer_index];
+		video_buffer_index = (video_buffer_index + 1) % video_buffers.size();
+		video_buffer.resize(static_cast<size_t>(frame_width) * static_cast<size_t>(frame_height) * 4);
+		cv::Mat bgra(static_cast<int>(frame_height), static_cast<int>(frame_width), CV_8UC4, video_buffer.data());
 		cv::cvtColor(nv21, bgra, cv::COLOR_YUV2BGRA_NV21);
 
 		width.store(static_cast<uint32_t>(bgra.cols));
@@ -650,8 +687,9 @@ private:
 		frame.height = static_cast<uint32_t>(bgra.rows);
 		frame.data[0] = bgra.data;
 		frame.linesize[0] = static_cast<uint32_t>(bgra.step[0]);
-		const uint64_t timestamp_us = frame_timestamp_us > 0 ? frame_timestamp_us : message_timestamp_us;
-		frame.timestamp = timestamp_us > 0 ? timestamp_us * 1000ULL : os_gettime_ns();
+		UNUSED_PARAMETER(message_timestamp_us);
+		UNUSED_PARAMETER(frame_timestamp_us);
+		frame.timestamp = os_gettime_ns();
 		obs_source_output_video(source, &frame);
 	}
 };

@@ -109,6 +109,26 @@ try {
         }
     }
 
+    $LibUsbDllSearchDirs = @(
+        (Join-Path $RootDir ".deps_vendor\libusb_installed\x64-windows\bin"),
+        (Join-Path $RootDir ".deps_vendor\libusb_installed\x64-windows\debug\bin"),
+        (Join-Path $RootDir ".deps_vendor\vcpkg_installed\x64-windows\bin"),
+        (Join-Path $RootDir ".deps_vendor\vcpkg_installed\x64-windows\debug\bin")
+    )
+
+    $LibUsbCopied = $false
+    foreach ($Dir in $LibUsbDllSearchDirs) {
+        $LibUsbDll = Join-Path $Dir "libusb-1.0.dll"
+        if (Test-Path $LibUsbDll) {
+            Copy-Item $LibUsbDll -Destination $PluginBinDir -Force
+            $LibUsbCopied = $true
+            break
+        }
+    }
+    if (-not $LibUsbCopied) {
+        Write-Warning "libusb-1.0.dll not found; CaCam USB will require libusb on PATH or next to bgobs.dll."
+    }
+
     # Copy scripts/windows files to root of zip
     $ScriptsWin = Join-Path $ScriptDir "windows"
     if (Test-Path $ScriptsWin) {

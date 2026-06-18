@@ -164,6 +164,7 @@ jobs:
 
           $vcpkgPath = "$env:VCPKG_ROOT\vcpkg.exe"
           & $vcpkgPath install --x-install-root=.\.deps_vendor\vcpkg_installed --triplet=x64-windows-static-md-obs
+          & $vcpkgPath install libusb --x-install-root=.\.deps_vendor\libusb_installed --triplet=x64-windows
 
       - name: Download dependencies (Windows)
         shell: pwsh

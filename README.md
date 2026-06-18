@@ -19,6 +19,15 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.3
+
+- Corrige l'image figee en USB BGOBS dans OBS en utilisant l'horloge video
+  locale d'OBS pour les frames USB.
+- Stabilise la sortie video USB avec des buffers BGRA conserves entre deux
+  frames.
+- Ajoute `libusb-1.0.dll` au paquet Windows portable et le charge depuis le
+  dossier du plugin.
+
 ## Version 0.3.2
 
 - Corrige la lecture USB BGOBS quand Android envoie l'en-tete et la frame dans
