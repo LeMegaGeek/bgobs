@@ -76,3 +76,22 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             release/*.zip \
             --clobber
+
+      - name: Signal successful publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          status_ref="heads/release-status/$TAG"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/$status_ref" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/$status_ref" \
+              -f sha="$HEAD_SHA" \
+              -F force=true
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/release-status/$TAG" \
+              -f sha="$HEAD_SHA"
+          fi
