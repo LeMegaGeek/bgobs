@@ -6,13 +6,31 @@ PortableApps OBS Studio
 
 1. Close OBS Studio.
 
-2. Remove older installations before copying the new one.
+2. Run:
+
+     install-portable.bat
+
+   When prompted, enter the folder that contains OBSPortable.exe (or the
+   legacy OBS-StudioPortable.exe launcher). The script copies all DLL and data
+   files automatically.
+
+3. Restart OBS Studio and add the source:
+
+     CaCam USB
+
+   libusb-1.0.dll must remain beside bgobs.dll for this source to be available.
+
+
+Manual PortableApps installation
+--------------------------------
+
+1. Remove older installations before copying the new one.
 
    Run:
 
      remove-old-installation.bat
 
-   When prompted, enter the folder that contains OBS-StudioPortable.exe.
+   When prompted, enter the folder that contains OBSPortable.exe.
 
    Example:
 
@@ -20,13 +38,13 @@ PortableApps OBS Studio
 
    This removes both older obs-backgroundremoval files and previous BGOBS files.
 
-3. Find the folder that contains OBS-StudioPortable.exe.
+2. Find the folder that contains OBSPortable.exe.
 
    Example:
 
      D:\PortableApps\OBS-StudioPortable\
 
-4. Copy the DLL files from:
+3. Copy the DLL files from:
 
      bgobs\bin\64bit\
 
@@ -34,7 +52,7 @@ PortableApps OBS Studio
 
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\
 
-5. Copy the contents of:
+4. Copy the contents of:
 
      bgobs\data\
 
@@ -43,20 +61,25 @@ PortableApps OBS Studio
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\bgobs\
      D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\bgobs\
 
-6. The final layout should include:
+5. The final layout should include:
 
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\bgobs.dll
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\libusb-1.0.dll
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\bgobs\models\
      D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\bgobs\models\
 
-7. Restart OBS Studio and check the video source filter list for:
+6. Restart OBS Studio and check the source list for:
+
+     CaCam USB
+
+   The video source filter list should also contain:
 
      Make me look good / Rend-moi beau gosse
      Low-Light Enhancement
 
-8. If OBS still reports version 1.3.x, open the latest OBS log under:
+7. If OBS still reports version 1.3.x, open the latest OBS log under:
 
      D:\PortableApps\OBS-StudioPortable\Data\config\obs-studio\logs\
 

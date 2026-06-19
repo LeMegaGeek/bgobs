@@ -12,12 +12,13 @@ echo Close OBS Studio before continuing.
 echo.
 
 set "PORTABLE_ROOT=%~1"
+if "%PORTABLE_ROOT%"=="" if exist "%CD%\OBSPortable.exe" set "PORTABLE_ROOT=%CD%"
 if "%PORTABLE_ROOT%"=="" if exist "%CD%\OBS-StudioPortable.exe" set "PORTABLE_ROOT=%CD%"
 
 if "%PORTABLE_ROOT%"=="" (
-    echo Optional: enter the folder that contains OBS-StudioPortable.exe.
+    echo Optional: enter the folder that contains OBSPortable.exe.
     echo Leave empty to only clean standard OBS Studio locations.
-    set /p "PORTABLE_ROOT=OBS-StudioPortable folder: "
+    set /p "PORTABLE_ROOT=OBS Portable folder: "
 )
 
 if not "%PORTABLE_ROOT%"=="" (
@@ -69,11 +70,11 @@ echo.
 echo Done. Install the new package by copying:
 echo   bgobs\bin\64bit\*.dll
 echo into:
-echo   ^<OBS-StudioPortable^>\App\obs-studio\obs-plugins\64bit\
+echo   ^<OBS-Portable^>\App\obs-studio\obs-plugins\64bit\
 echo.
 echo Then copy bgobs\data\* into:
-echo   ^<OBS-StudioPortable^>\App\obs-studio\data\obs-plugins\bgobs\
-echo   ^<OBS-StudioPortable^>\Data\obs-plugins\bgobs\
+echo   ^<OBS-Portable^>\App\obs-studio\data\obs-plugins\bgobs\
+echo   ^<OBS-Portable^>\Data\obs-plugins\bgobs\
 echo.
 echo If OBS still reports version 1.3.x, open the latest OBS log and search
 echo for obs-backgroundremoval to find the old DLL path that is still loaded.

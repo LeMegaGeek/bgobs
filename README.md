@@ -19,6 +19,22 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.5
+
+- Active le mode video asynchrone non tamponne d'OBS pour afficher la frame la
+  plus recente sans file d'attente interne.
+- Jette les frames qui ont accumule plus de 150 ms d'attente cote telephone ou
+  transport USB, au lieu d'augmenter progressivement la latence visible.
+- Compense lentement la derive d'horloge Android/PC pour conserver cette mesure
+  de latence pendant les longues sessions.
+- Declenche automatiquement Android Open Accessory sur les telephones Android,
+  notamment Xiaomi, et conserve la connexion pendant les changements de scene.
+- Ajoute des diagnostics precis pour la premiere frame, les erreurs AOA et le
+  pilote WinUSB requis sous Windows.
+- Ajoute un installateur pour OBS PortableApps compatible avec `OBSPortable.exe`.
+- Complete CaCam `0.9.6`, qui gere la rotation et la reconnexion apres un
+  redemarrage d'OBS.
+
 ## Version 0.3.4
 
 - Reduit la latence de la source **CaCam USB** en lisant le flux USB avec un
@@ -126,7 +142,16 @@ sudo apt remove obs-backgroundremoval
 
 ## Installation Windows PortableApps
 
-Pour OBS PortableApps, le ZIP Windows doit contenir un dossier `bgobs`.
+Pour OBS PortableApps, ferme OBS, decompresse le ZIP puis lance
+`install-portable.bat`. Le script reconnait les lanceurs `OBSPortable.exe` et
+`OBS-StudioPortable.exe`, puis installe automatiquement le plugin et ses donnees.
+
+Apres redemarrage d'OBS, ajoute la source **CaCam USB**. Le fichier
+`libusb-1.0.dll` doit rester a cote de `bgobs.dll` pour que cette source soit
+proposee.
+
+L'installation manuelle reste possible. Le ZIP Windows doit contenir un dossier
+`bgobs`.
 
 Copie les DLL dans :
 
@@ -145,13 +170,15 @@ La disposition finale doit inclure :
 
 ```text
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\bgobs.dll
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\libusb-1.0.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
 <OBS-StudioPortable>\App\obs-studio\data\obs-plugins\bgobs\models\
 <OBS-StudioPortable>\Data\obs-plugins\bgobs\models\
 ```
 
-Avant de copier une nouvelle version, lance `remove-old-installation.bat` depuis le ZIP. Il retire les anciennes copies `obs-backgroundremoval` et les anciennes copies `bgobs`.
+Avant une installation manuelle, lance `remove-old-installation.bat` depuis le
+ZIP. Il retire les anciennes copies `obs-backgroundremoval` et `bgobs`.
 
 ## Compiler
 
