@@ -13,6 +13,9 @@
 name: Windows Package
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       VCPKG_BINARY_SOURCES:
@@ -130,7 +133,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: microsoft/vcpkg
-          ref: ${{ inputs.vcpkg-version }}
+          ref: ${{ inputs.vcpkg-version || '9849e070ad4c3383890fb1c80ae0c54325e2484a' }}
           persist-credentials: false
           path: ${{ env.ROOT_VCPKG_ROOT }}
 
@@ -153,7 +156,7 @@ jobs:
         shell: pwsh
         env:
           PATH: '${{ env.FILTERED_PATH }}'
-          VCPKG_BINARY_SOURCES: '${{ inputs.VCPKG_BINARY_SOURCES }}'
+          VCPKG_BINARY_SOURCES: "${{ inputs.VCPKG_BINARY_SOURCES || 'clear;http,https://vcpkg-obs.kaito.tokyo/{name}/{version}/{sha},read' }}"
           VCPKG_ROOT: '${{ env.ROOT_VCPKG_ROOT }}'
         run: |
           $ErrorActionPreference = 'Stop'
@@ -203,7 +206,7 @@ jobs:
 
           . $env:CLEAN_PWSH_ENV
 
-          $OrtTag = '${{ inputs.ort-version }}'
+          $OrtTag = '${{ inputs.ort-version || 'v1.23.2' }}'
           $OrtVersion = $OrtTag.TrimStart('v')
           $VendorDir = Join-Path $pwd '.deps_vendor'
           $Archive = Join-Path $VendorDir "onnxruntime-win-x64-$OrtVersion.zip"
