@@ -61,6 +61,10 @@ The final layout should include:
 Restart OBS after copying the files. The **CaCam USB** source and the BGOBS and
 Low-Light Enhancement filters should be available.
 
+For the first USB connection, unlock the phone, accept Android's accessory
+prompt if it appears, and keep CaCam in the foreground until OBS displays the
+first frame.
+
 ## Standard Windows OBS
 
 For a normal Windows OBS install, copy the same plugin folder into:
@@ -76,6 +80,11 @@ supported Windows plugin location.
 
 - If the filters are not listed, confirm that OBS is 64-bit and that `bgobs.dll` is a Windows x64 DLL.
 - If the **CaCam USB** source is not listed, confirm that `libusb-1.0.dll` is beside `bgobs.dll`.
+- If the OBS log says that the Android device is not accessible, install the
+  WinUSB driver for the phone's active USB interface, reconnect the phone, and
+  restart OBS.
+- If the accessory opens but sends no data, unlock the phone and leave CaCam in
+  the foreground until the first frame appears.
 - If OBS reports missing ONNX Runtime libraries, put the ONNX Runtime DLLs beside `bgobs.dll`.
 - If OBS reports missing model files, confirm that the bundle contains `bgobs\data\models`.
 - If OBS still reports version `1.3.x`, it is loading an older DLL from another folder. Open the latest log under

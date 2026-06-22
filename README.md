@@ -19,6 +19,15 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.6
+
+- Distingue l'ouverture de l'interface USB de la connexion effective avec
+  l'application CaCam.
+- Signale clairement quand le telephone est verrouille ou que CaCam n'envoie
+  aucune donnee apres cinq secondes.
+- Complete CaCam `0.9.8`, qui attend le premier plan Android avant d'ouvrir la
+  camera et ne plante plus avec l'erreur `CAMERA_DISABLED`.
+
 ## Version 0.3.5
 
 - Active le mode video asynchrone non tamponne d'OBS pour afficher la frame la
@@ -109,7 +118,8 @@ Avec CaCam en USB direct :
 2. Dans CaCam, choisis le preset **USB BGOBS** et demarre le flux.
 3. Dans OBS, ajoute la source **CaCam USB**.
 4. Accepte l'autorisation USB sur le telephone si Android la demande.
-5. Ajoute le filtre **Rend-moi beau gosse** sur la source **CaCam USB**.
+5. Deverrouille le telephone et laisse CaCam visible jusqu'a la premiere image.
+6. Ajoute le filtre **Rend-moi beau gosse** sur la source **CaCam USB**.
 
 Une lumiere frontale douce reste souvent plus efficace qu'un modele plus lourd. Les contours difficiles viennent souvent d'un contre-jour, d'un fond trop proche de la couleur des cheveux, ou d'une webcam trop compressee.
 
