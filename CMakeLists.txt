@@ -163,7 +163,6 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
   if(NOT TARGET OpenCV::opencv_imgproc)
     add_library(OpenCV::opencv_imgproc ALIAS opencv_imgproc)
   endif()
-
 endblock()
 
 block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIME_DELAYLOAD)
