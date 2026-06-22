@@ -21,7 +21,6 @@ jobs:
        startsWith(github.event.workflow_run.head_branch, 'release-build/'))
     runs-on: ubuntu-24.04
     permissions:
-      actions: read
       contents: write
 
     steps:
@@ -45,37 +44,22 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Download Windows packages
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          gh run download "$RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "pluginbinary-windows-x64-$RUN_ID" \
-            --dir release
-
-      - name: Publish release
+      - name: Verify published Windows packages
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "BGOBS ${TAG#v}" \
-              --notes-file "release-notes/$TAG.md"
-          fi
-          gh release upload "$TAG" \
+          version="${TAG#v}"
+          runtime_asset="bgobs-$version-windows-x64.zip"
+          symbols_asset="bgobs-$version-windows-x64-pdb.zip"
+          assets="$(gh release view "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            release/*.zip \
-            --clobber
+            --json assets \
+            --jq '.assets[].name')"
+          grep -Fxq "$runtime_asset" <<< "$assets"
+          grep -Fxq "$symbols_asset" <<< "$assets"
 
       - name: Signal successful publication
         shell: bash
