@@ -20,6 +20,9 @@ PortableApps OBS Studio
 
    libusb-1.0.dll must remain beside bgobs.dll for this source to be available.
 
+4. Unlock the phone, accept the Android USB prompt if it appears, and leave
+   CaCam in the foreground until the first frame appears in OBS.
+
 
 Manual PortableApps installation
 --------------------------------

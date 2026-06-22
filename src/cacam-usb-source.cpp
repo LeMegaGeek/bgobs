@@ -143,6 +143,7 @@ constexpr int64_t MAX_CLOCK_BASELINE_STEP_US = 100;
 constexpr int BULK_TIMEOUT_MS = 1000;
 constexpr int CONTROL_TIMEOUT_MS = 1000;
 constexpr int RETRY_DELAY_MS = 1200;
+constexpr int NO_DATA_WARNING_MS = 5000;
 
 struct UsbApi {
 #ifdef _WIN32
@@ -163,7 +164,8 @@ struct UsbApi {
 	void (*free_config_descriptor)(libusb_config_descriptor *) = nullptr;
 	int (*claim_interface)(libusb_device_handle *, int) = nullptr;
 	int (*release_interface)(libusb_device_handle *, int) = nullptr;
-	int (*bulk_transfer)(libusb_device_handle *, unsigned char, unsigned char *, int, int *, unsigned int) = nullptr;
+	int (*bulk_transfer)(libusb_device_handle *, unsigned char, unsigned char *, int, int *,
+			     unsigned int) = nullptr;
 	int (*kernel_driver_active)(libusb_device_handle *, int) = nullptr;
 	int (*detach_kernel_driver)(libusb_device_handle *, int) = nullptr;
 	const char *(*error_name)(int) = nullptr;
@@ -191,20 +193,21 @@ struct UsbApi {
 		if (!library)
 			return false;
 
-		const bool symbols_loaded = loadSymbol(init, "libusb_init") && loadSymbol(exit, "libusb_exit") &&
-					    loadSymbol(get_device_list, "libusb_get_device_list") &&
-					    loadSymbol(free_device_list, "libusb_free_device_list") &&
-					    loadSymbol(get_device_descriptor, "libusb_get_device_descriptor") &&
-					    loadSymbol(open, "libusb_open") && loadSymbol(close, "libusb_close") &&
-					    loadSymbol(control_transfer, "libusb_control_transfer") &&
-					    loadSymbol(get_active_config_descriptor, "libusb_get_active_config_descriptor") &&
-					    loadSymbol(free_config_descriptor, "libusb_free_config_descriptor") &&
-					    loadSymbol(claim_interface, "libusb_claim_interface") &&
-					    loadSymbol(release_interface, "libusb_release_interface") &&
-					    loadSymbol(bulk_transfer, "libusb_bulk_transfer") &&
-					    loadSymbol(kernel_driver_active, "libusb_kernel_driver_active") &&
-					    loadSymbol(detach_kernel_driver, "libusb_detach_kernel_driver") &&
-					    loadSymbol(error_name, "libusb_error_name");
+		const bool symbols_loaded =
+			loadSymbol(init, "libusb_init") && loadSymbol(exit, "libusb_exit") &&
+			loadSymbol(get_device_list, "libusb_get_device_list") &&
+			loadSymbol(free_device_list, "libusb_free_device_list") &&
+			loadSymbol(get_device_descriptor, "libusb_get_device_descriptor") &&
+			loadSymbol(open, "libusb_open") && loadSymbol(close, "libusb_close") &&
+			loadSymbol(control_transfer, "libusb_control_transfer") &&
+			loadSymbol(get_active_config_descriptor, "libusb_get_active_config_descriptor") &&
+			loadSymbol(free_config_descriptor, "libusb_free_config_descriptor") &&
+			loadSymbol(claim_interface, "libusb_claim_interface") &&
+			loadSymbol(release_interface, "libusb_release_interface") &&
+			loadSymbol(bulk_transfer, "libusb_bulk_transfer") &&
+			loadSymbol(kernel_driver_active, "libusb_kernel_driver_active") &&
+			loadSymbol(detach_kernel_driver, "libusb_detach_kernel_driver") &&
+			loadSymbol(error_name, "libusb_error_name");
 		if (!symbols_loaded)
 			unload();
 		return symbols_loaded;
@@ -317,8 +320,7 @@ int send_aoa_string(UsbApi &api, libusb_device_handle *handle, uint16_t index, c
 {
 	std::vector<unsigned char> bytes(std::strlen(value) + 1);
 	std::memcpy(bytes.data(), value, bytes.size());
-	return api.control_transfer(handle,
-				    LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
+	return api.control_transfer(handle, LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
 				    AOA_SEND_IDENT, 0, index, bytes.data(), static_cast<uint16_t>(bytes.size()),
 				    CONTROL_TIMEOUT_MS);
 }
@@ -380,10 +382,9 @@ AccessoryRequestResult request_accessory_mode(UsbApi &api, libusb_device *device
 	}
 
 	unsigned char version_bytes[2] = {};
-	const int protocol_result = api.control_transfer(handle, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR |
-							LIBUSB_RECIPIENT_DEVICE,
-						AOA_GET_PROTOCOL, 0, 0, version_bytes, sizeof(version_bytes),
-						CONTROL_TIMEOUT_MS);
+	const int protocol_result =
+		api.control_transfer(handle, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
+				     AOA_GET_PROTOCOL, 0, 0, version_bytes, sizeof(version_bytes), CONTROL_TIMEOUT_MS);
 	if (protocol_result < 2 || read_u16_le(version_bytes) == 0) {
 		api.close(handle);
 		return request;
@@ -514,7 +515,9 @@ AccessoryRequestResult request_first_android_accessory(UsbApi &api, libusb_conte
 class BulkReader {
 public:
 	BulkReader(UsbApi &api_, AccessoryConnection &connection_, const std::atomic<bool> &stop_requested_)
-		: api(api_), connection(connection_), stop_requested(stop_requested_)
+		: api(api_),
+		  connection(connection_),
+		  stop_requested(stop_requested_)
 	{
 		buffer.reserve(BULK_READ_BUFFER_SIZE);
 		read_buffer.resize(BULK_READ_BUFFER_SIZE);
@@ -556,17 +559,46 @@ private:
 	std::vector<unsigned char> buffer;
 	std::vector<unsigned char> read_buffer;
 	size_t buffer_offset = 0;
+	std::chrono::steady_clock::time_point last_data_at = std::chrono::steady_clock::now();
+	bool received_data = false;
+	bool wait_warning_logged = false;
 
 	int fill()
 	{
 		int transferred = 0;
 		const int result = api.bulk_transfer(connection.handle, connection.endpoint_in, read_buffer.data(),
-						     static_cast<int>(read_buffer.size()), &transferred, BULK_TIMEOUT_MS);
+						     static_cast<int>(read_buffer.size()), &transferred,
+						     BULK_TIMEOUT_MS);
+		if (result == LIBUSB_ERROR_TIMEOUT) {
+			log_wait_warning();
+			return result;
+		}
 		if (result < 0)
 			return result;
-		if (transferred > 0)
+		if (transferred > 0) {
 			buffer.assign(read_buffer.begin(), read_buffer.begin() + transferred);
+			last_data_at = std::chrono::steady_clock::now();
+			received_data = true;
+			wait_warning_logged = false;
+		}
 		return result;
+	}
+
+	void log_wait_warning()
+	{
+		if (wait_warning_logged ||
+		    std::chrono::steady_clock::now() - last_data_at < std::chrono::milliseconds(NO_DATA_WARNING_MS)) {
+			return;
+		}
+
+		if (received_data) {
+			obs_log(LOG_WARNING, "[CaCam USB] No video data for 5 seconds; waiting for the phone");
+		} else {
+			obs_log(LOG_WARNING,
+				"[CaCam USB] Accessory opened but CaCam sent no data. Unlock the phone and keep CaCam in "
+				"the foreground.");
+		}
+		wait_warning_logged = true;
 	}
 };
 
@@ -688,33 +720,36 @@ private:
 							     request.product != last_request.product ||
 							     request.protocol != last_request.protocol ||
 							     request.error != last_request.error;
-				if (request_changed) switch (request.status) {
-				case AccessoryRequestStatus::Requested:
-					obs_log(LOG_INFO,
-						"[CaCam USB] Requested Android Open Accessory mode for %04x:%04x (AOA %u)",
-						request.vendor, request.product, request.protocol);
-					break;
-				case AccessoryRequestStatus::OpenFailed:
-					obs_log(LOG_WARNING,
-						"[CaCam USB] Android device %04x:%04x is not accessible: %s (%d). "
-						"On Windows, verify the WinUSB driver.",
-						request.vendor, request.product, usb_error_name(api, request.error), request.error);
-					break;
-				case AccessoryRequestStatus::StartFailed:
-					obs_log(LOG_WARNING,
-						"[CaCam USB] AOA negotiation failed for %04x:%04x: %s (%d)", request.vendor,
-						request.product, usb_error_name(api, request.error), request.error);
-					break;
-				case AccessoryRequestStatus::NotSupported:
-					break;
-				}
+				if (request_changed)
+					switch (request.status) {
+					case AccessoryRequestStatus::Requested:
+						obs_log(LOG_INFO,
+							"[CaCam USB] Requested Android Open Accessory mode for %04x:%04x (AOA %u)",
+							request.vendor, request.product, request.protocol);
+						break;
+					case AccessoryRequestStatus::OpenFailed:
+						obs_log(LOG_WARNING,
+							"[CaCam USB] Android device %04x:%04x is not accessible: %s (%d). "
+							"On Windows, verify the WinUSB driver.",
+							request.vendor, request.product,
+							usb_error_name(api, request.error), request.error);
+						break;
+					case AccessoryRequestStatus::StartFailed:
+						obs_log(LOG_WARNING,
+							"[CaCam USB] AOA negotiation failed for %04x:%04x: %s (%d)",
+							request.vendor, request.product,
+							usb_error_name(api, request.error), request.error);
+						break;
+					case AccessoryRequestStatus::NotSupported:
+						break;
+					}
 				last_request = request;
 				sleep_retry();
 				continue;
 			}
 
 			last_request = {};
-			obs_log(LOG_INFO, "[CaCam USB] Connected");
+			obs_log(LOG_INFO, "[CaCam USB] Accessory interface opened");
 			read_stream(api, connection);
 			connection.close(api);
 			obs_log(LOG_INFO, "[CaCam USB] Disconnected");
@@ -749,7 +784,8 @@ private:
 			const uint32_t payload_size = read_u32_be(header.data() + 8);
 			const uint64_t timestamp_us = read_u64_be(header.data() + 12);
 
-			if (magic != CACAM_MAGIC || version != CACAM_PROTOCOL_VERSION || payload_size > MAX_PAYLOAD_SIZE) {
+			if (magic != CACAM_MAGIC || version != CACAM_PROTOCOL_VERSION ||
+			    payload_size > MAX_PAYLOAD_SIZE) {
 				obs_log(LOG_WARNING, "[CaCam USB] Invalid frame header");
 				continue;
 			}
@@ -761,22 +797,25 @@ private:
 
 			if (type == CACAM_TYPE_HELLO) {
 				const std::string text(payload.begin(), payload.end());
-				obs_log(LOG_INFO, "[CaCam USB] %s", text.c_str());
+				obs_log(LOG_INFO, "[CaCam USB] Connected: %s", text.c_str());
 			} else if (type == CACAM_TYPE_NV21) {
-				const int64_t clock_offset_us =
-					static_cast<int64_t>(os_gettime_ns() / 1000) - static_cast<int64_t>(timestamp_us);
+				const int64_t clock_offset_us = static_cast<int64_t>(os_gettime_ns() / 1000) -
+								static_cast<int64_t>(timestamp_us);
 				if (minimum_clock_offset_us == INT64_MAX || clock_offset_us < minimum_clock_offset_us) {
 					minimum_clock_offset_us = clock_offset_us;
 				} else {
-					minimum_clock_offset_us +=
-						std::min(clock_offset_us - minimum_clock_offset_us, MAX_CLOCK_BASELINE_STEP_US);
+					minimum_clock_offset_us += std::min(clock_offset_us - minimum_clock_offset_us,
+									    MAX_CLOCK_BASELINE_STEP_US);
 				}
-				const int64_t transport_backlog_us = std::max<int64_t>(0, clock_offset_us - minimum_clock_offset_us);
+				const int64_t transport_backlog_us =
+					std::max<int64_t>(0, clock_offset_us - minimum_clock_offset_us);
 				int64_t sender_queue_us = 0;
 				if (payload.size() >= CACAM_FRAME_METADATA_SIZE) {
 					const uint64_t frame_timestamp_us = read_u64_be(payload.data() + 8);
-					if (timestamp_us >= frame_timestamp_us && timestamp_us - frame_timestamp_us <= INT64_MAX)
-						sender_queue_us = static_cast<int64_t>(timestamp_us - frame_timestamp_us);
+					if (timestamp_us >= frame_timestamp_us &&
+					    timestamp_us - frame_timestamp_us <= INT64_MAX)
+						sender_queue_us =
+							static_cast<int64_t>(timestamp_us - frame_timestamp_us);
 				}
 				const int64_t frame_age_us = sender_queue_us + transport_backlog_us;
 				if (frame_age_us > MAX_FRAME_AGE_US) {
@@ -811,17 +850,19 @@ private:
 		if (frame_width == 0 || frame_height == 0 || frame_width > 4096 || frame_height > 4096)
 			return false;
 
-		const size_t expected_size = static_cast<size_t>(frame_width) * static_cast<size_t>(frame_height) * 3 / 2;
+		const size_t expected_size =
+			static_cast<size_t>(frame_width) * static_cast<size_t>(frame_height) * 3 / 2;
 		if (payload.size() - CACAM_FRAME_METADATA_SIZE < expected_size)
 			return false;
 
 		auto *frame_data = const_cast<unsigned char *>(payload.data() + CACAM_FRAME_METADATA_SIZE);
-		const cv::Mat nv21(static_cast<int>(frame_height + frame_height / 2), static_cast<int>(frame_width), CV_8UC1,
-				   frame_data);
+		const cv::Mat nv21(static_cast<int>(frame_height + frame_height / 2), static_cast<int>(frame_width),
+				   CV_8UC1, frame_data);
 		auto &video_buffer = video_buffers[video_buffer_index];
 		video_buffer_index = (video_buffer_index + 1) % video_buffers.size();
 		video_buffer.resize(static_cast<size_t>(frame_width) * static_cast<size_t>(frame_height) * 4);
-		cv::Mat bgra(static_cast<int>(frame_height), static_cast<int>(frame_width), CV_8UC4, video_buffer.data());
+		cv::Mat bgra(static_cast<int>(frame_height), static_cast<int>(frame_width), CV_8UC4,
+			     video_buffer.data());
 		cv::cvtColor(nv21, bgra, cv::COLOR_YUV2BGRA_NV21);
 
 		width.store(static_cast<uint32_t>(bgra.cols));
