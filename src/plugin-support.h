@@ -19,6 +19,7 @@ extern "C" {
 extern const char *PLUGIN_NAME;
 extern const char *PLUGIN_VERSION;
 
+void bgobs_logv(int log_level, const char *format, va_list args);
 void obs_log(int log_level, const char *format, ...);
 
 #ifdef __cplusplus

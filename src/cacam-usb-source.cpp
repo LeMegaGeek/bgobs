@@ -643,17 +643,23 @@ public:
 	void update(obs_data_t *settings)
 	{
 		const bool should_auto_connect = obs_data_get_bool(settings, "auto_connect");
+		verbose_logging.store(obs_data_get_bool(settings, "verbose_logging"));
 		auto_connect = should_auto_connect;
-		if (auto_connect)
+		if (auto_connect) {
+			log_verbose("[CaCam USB] Auto-connect enabled");
 			start();
-		else
+		} else {
+			log_verbose("[CaCam USB] Auto-connect disabled");
 			stop();
+		}
 	}
 
 	void activate()
 	{
-		if (auto_connect)
+		if (auto_connect) {
+			log_verbose("[CaCam USB] Source activated");
 			start();
+		}
 	}
 
 	void deactivate()
@@ -673,11 +679,23 @@ private:
 	std::thread worker;
 	std::mutex worker_mutex;
 	std::atomic<bool> stop_requested{false};
+	std::atomic<bool> verbose_logging{false};
 	std::atomic<uint32_t> width{1280};
 	std::atomic<uint32_t> height{720};
 	std::array<std::vector<unsigned char>, 3> video_buffers;
 	size_t video_buffer_index = 0;
 	bool auto_connect = true;
+
+	void log_verbose(const char *format, ...) const
+	{
+		if (!verbose_logging.load())
+			return;
+
+		va_list args;
+		va_start(args, format);
+		bgobs_logv(LOG_INFO, format, args);
+		va_end(args);
+	}
 
 	void start()
 	{
@@ -685,6 +703,7 @@ private:
 		if (worker.joinable())
 			return;
 		stop_requested.store(false);
+		log_verbose("[CaCam USB] Starting USB worker");
 		worker = std::thread(&CacamUsbSource::worker_loop, this);
 	}
 
@@ -692,8 +711,10 @@ private:
 	{
 		std::lock_guard<std::mutex> guard(worker_mutex);
 		stop_requested.store(true);
-		if (worker.joinable())
+		if (worker.joinable()) {
+			log_verbose("[CaCam USB] Stopping USB worker");
 			worker.join();
+		}
 	}
 
 	void worker_loop()
@@ -723,7 +744,7 @@ private:
 				if (request_changed)
 					switch (request.status) {
 					case AccessoryRequestStatus::Requested:
-						obs_log(LOG_INFO,
+						log_verbose(
 							"[CaCam USB] Requested Android Open Accessory mode for %04x:%04x (AOA %u)",
 							request.vendor, request.product, request.protocol);
 						break;
@@ -749,10 +770,10 @@ private:
 			}
 
 			last_request = {};
-			obs_log(LOG_INFO, "[CaCam USB] Accessory interface opened");
+			log_verbose("[CaCam USB] Accessory interface opened");
 			read_stream(api, connection);
 			connection.close(api);
-			obs_log(LOG_INFO, "[CaCam USB] Disconnected");
+			log_verbose("[CaCam USB] Disconnected");
 			sleep_retry();
 		}
 
@@ -797,7 +818,7 @@ private:
 
 			if (type == CACAM_TYPE_HELLO) {
 				const std::string text(payload.begin(), payload.end());
-				obs_log(LOG_INFO, "[CaCam USB] Connected: %s", text.c_str());
+				log_verbose("[CaCam USB] Connected: %s", text.c_str());
 			} else if (type == CACAM_TYPE_NV21) {
 				const int64_t clock_offset_us = static_cast<int64_t>(os_gettime_ns() / 1000) -
 								static_cast<int64_t>(timestamp_us);
@@ -830,7 +851,7 @@ private:
 					continue;
 				}
 				if (output_nv21(payload, timestamp_us) && !first_frame_logged) {
-					obs_log(LOG_INFO, "[CaCam USB] First video frame: %ux%u (%lld ms sender queue)",
+					log_verbose("[CaCam USB] First video frame: %ux%u (%lld ms sender queue)",
 						read_u32_be(payload.data()), read_u32_be(payload.data() + 4),
 						static_cast<long long>(sender_queue_us / 1000));
 					first_frame_logged = true;
@@ -882,6 +903,16 @@ private:
 	}
 };
 
+std::string localized_text_with_version(const char *key)
+{
+	std::string text = obs_module_text(key);
+	const std::string placeholder = "%1";
+	const size_t position = text.find(placeholder);
+	if (position != std::string::npos)
+		text.replace(position, placeholder.size(), PLUGIN_VERSION);
+	return text;
+}
+
 } // namespace
 
 extern "C" const char *cacam_usb_source_getname(void *unused)
@@ -915,13 +946,17 @@ extern "C" uint32_t cacam_usb_source_get_height(void *data)
 extern "C" void cacam_usb_source_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, "auto_connect", true);
+	obs_data_set_default_bool(settings, "verbose_logging", false);
 }
 
 extern "C" obs_properties_t *cacam_usb_source_properties(void *data)
 {
 	UNUSED_PARAMETER(data);
 	obs_properties_t *properties = obs_properties_create();
+	const std::string version_info = localized_text_with_version("CaCamUsbVersionInfo");
+	obs_properties_add_text(properties, "bgobs_version_info", version_info.c_str(), OBS_TEXT_INFO);
 	obs_properties_add_bool(properties, "auto_connect", obs_module_text("CaCamUsbAutoConnect"));
+	obs_properties_add_bool(properties, "verbose_logging", obs_module_text("CaCamUsbVerboseLogging"));
 	return properties;
 }
 
