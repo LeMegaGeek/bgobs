@@ -17,6 +17,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <iterator>
@@ -921,6 +922,11 @@ extern "C" obs_properties_t *cacam_usb_source_properties(void *data)
 {
 	UNUSED_PARAMETER(data);
 	obs_properties_t *properties = obs_properties_create();
+
+	char version_info[512] = {};
+	std::snprintf(version_info, sizeof(version_info), obs_module_text("CaCamUsbVersionInfo"), PLUGIN_VERSION);
+	obs_properties_add_text(properties, "bgobs_version_info", version_info, OBS_TEXT_INFO);
+
 	obs_properties_add_bool(properties, "auto_connect", obs_module_text("CaCamUsbAutoConnect"));
 	return properties;
 }
