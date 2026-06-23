@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdarg>
 #include <cstdint>
 #include <cstring>
 #include <iterator>
@@ -644,7 +645,12 @@ public:
 	void update(obs_data_t *settings)
 	{
 		const bool should_auto_connect = obs_data_get_bool(settings, "auto_connect");
+		const bool should_debug_log = obs_data_get_bool(settings, "debug_logging");
 		auto_connect = should_auto_connect;
+		debug_logging.store(should_debug_log);
+		if (debug_logging.load())
+			obs_log(LOG_INFO, "[CaCam USB][debug] settings updated: auto_connect=%s",
+				auto_connect ? "true" : "false");
 		if (auto_connect)
 			start();
 		else
@@ -679,6 +685,7 @@ private:
 	std::array<std::vector<unsigned char>, 3> video_buffers;
 	size_t video_buffer_index = 0;
 	bool auto_connect = true;
+	std::atomic<bool> debug_logging{false};
 
 	void start()
 	{
@@ -697,24 +704,42 @@ private:
 			worker.join();
 	}
 
+	void debug_log(const char *format, ...) const
+	{
+		if (!debug_logging.load())
+			return;
+
+		char message[1024] = {};
+		va_list args;
+		va_start(args, format);
+		std::vsnprintf(message, sizeof(message), format, args);
+		va_end(args);
+		obs_log(LOG_INFO, "[CaCam USB][debug] %s", message);
+	}
+
 	void worker_loop()
 	{
+		debug_log("worker starting with BGOBS %s", PLUGIN_VERSION);
 		UsbApi api;
 		if (!api.load()) {
 			obs_log(LOG_ERROR, "[CaCam USB] libusb runtime not found");
 			return;
 		}
 
+		debug_log("libusb runtime loaded");
+
 		libusb_context *context = nullptr;
 		if (api.init(&context) != 0 || !context) {
 			obs_log(LOG_ERROR, "[CaCam USB] libusb initialization failed");
 			return;
 		}
+		debug_log("libusb context initialized");
 
 		AccessoryRequestResult last_request = {};
 		while (!stop_requested.load()) {
 			AccessoryConnection connection;
 			if (!open_accessory(api, context, connection)) {
+				debug_log("no active Android Open Accessory interface found; probing Android devices");
 				const AccessoryRequestResult request = request_first_android_accessory(api, context);
 				const bool request_changed = request.status != last_request.status ||
 							     request.vendor != last_request.vendor ||
@@ -751,12 +776,15 @@ private:
 
 			last_request = {};
 			obs_log(LOG_INFO, "[CaCam USB] Accessory interface opened");
+			debug_log("selected accessory endpoint 0x%02x on interface %d", connection.endpoint_in,
+				  connection.interface_number);
 			read_stream(api, connection);
 			connection.close(api);
 			obs_log(LOG_INFO, "[CaCam USB] Disconnected");
 			sleep_retry();
 		}
 
+		debug_log("worker stopping");
 		api.exit(context);
 	}
 
@@ -916,6 +944,7 @@ extern "C" uint32_t cacam_usb_source_get_height(void *data)
 extern "C" void cacam_usb_source_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, "auto_connect", true);
+	obs_data_set_default_bool(settings, "debug_logging", false);
 }
 
 extern "C" obs_properties_t *cacam_usb_source_properties(void *data)
@@ -923,11 +952,14 @@ extern "C" obs_properties_t *cacam_usb_source_properties(void *data)
 	UNUSED_PARAMETER(data);
 	obs_properties_t *properties = obs_properties_create();
 
-	char version_info[512] = {};
-	std::snprintf(version_info, sizeof(version_info), obs_module_text("CaCamUsbVersionInfo"), PLUGIN_VERSION);
-	obs_properties_add_text(properties, "bgobs_version_info", version_info, OBS_TEXT_INFO);
+	std::string version_info = obs_module_text("CaCamUsbVersionInfo");
+	const size_t version_placeholder = version_info.find("%1");
+	if (version_placeholder != std::string::npos)
+		version_info.replace(version_placeholder, 2, PLUGIN_VERSION);
+	obs_properties_add_text(properties, "bgobs_version_info", version_info.c_str(), OBS_TEXT_INFO);
 
 	obs_properties_add_bool(properties, "auto_connect", obs_module_text("CaCamUsbAutoConnect"));
+	obs_properties_add_bool(properties, "debug_logging", obs_module_text("CaCamUsbDebugLogging"));
 	return properties;
 }
 
