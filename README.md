@@ -19,6 +19,13 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.9
+
+- Ajoute un message de diagnostic quand les **Logs USB detailles** sont actifs
+  et qu'aucun appareil Android Open Accessory n'est visible pour `libusb`.
+  Sur Windows, cela aide a identifier les telephones restes en MTP/WPD au lieu
+  d'une interface accessible via WinUSB.
+
 ## Version 0.3.8
 
 - Affiche la version BGOBS directement dans les proprietes de la source

@@ -732,11 +732,12 @@ private:
 		}
 
 		AccessoryRequestResult last_request = {};
+		bool has_last_request = false;
 		while (!stop_requested.load()) {
 			AccessoryConnection connection;
 			if (!open_accessory(api, context, connection)) {
 				const AccessoryRequestResult request = request_first_android_accessory(api, context);
-				const bool request_changed = request.status != last_request.status ||
+				const bool request_changed = !has_last_request || request.status != last_request.status ||
 							     request.vendor != last_request.vendor ||
 							     request.product != last_request.product ||
 							     request.protocol != last_request.protocol ||
@@ -762,14 +763,19 @@ private:
 							usb_error_name(api, request.error), request.error);
 						break;
 					case AccessoryRequestStatus::NotSupported:
+						log_verbose("[CaCam USB] No Android Open Accessory device is visible to libusb. "
+							    "On Windows, verify the phone uses a WinUSB-accessible interface; "
+							    "MTP/WPD devices cannot be switched to accessory mode by BGOBS.");
 						break;
 					}
 				last_request = request;
+				has_last_request = true;
 				sleep_retry();
 				continue;
 			}
 
 			last_request = {};
+			has_last_request = false;
 			log_verbose("[CaCam USB] Accessory interface opened");
 			read_stream(api, connection);
 			connection.close(api);
