@@ -19,6 +19,13 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.10
+
+- Ignore explicitement l'interface ADB exposee par Android en mode Open
+  Accessory pour ne lire que l'interface video CaCam.
+- Signale clairement quand l'interface Android Accessory est presente sous
+  Windows mais qu'aucun pilote WinUSB n'est installe dessus.
+
 ## Version 0.3.9
 
 - Ajoute un message de diagnostic quand les **Logs USB detailles** sont actifs

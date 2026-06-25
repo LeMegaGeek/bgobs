@@ -279,6 +279,18 @@ struct AccessoryConnection {
 	}
 };
 
+bool is_aoa_accessory_interface(const libusb_interface_descriptor &descriptor)
+{
+	return descriptor.bInterfaceClass == 0xff && descriptor.bInterfaceSubClass == 0xff &&
+	       descriptor.bInterfaceProtocol == 0x00;
+}
+
+bool is_adb_interface(const libusb_interface_descriptor &descriptor)
+{
+	return descriptor.bInterfaceClass == 0xff && descriptor.bInterfaceSubClass == 0x42 &&
+	       descriptor.bInterfaceProtocol == 0x01;
+}
+
 bool is_aoa_product(uint16_t vendor, uint16_t product)
 {
 	if (vendor != GOOGLE_VENDOR_ID)
@@ -338,6 +350,22 @@ struct AccessoryRequestResult {
 	uint16_t product = 0;
 	uint16_t protocol = 0;
 	int error = 0;
+};
+
+enum class AccessoryOpenStatus {
+	NotFound,
+	Opened,
+	OpenFailed,
+	AccessoryInterfaceInaccessible,
+};
+
+struct AccessoryOpenResult {
+	AccessoryOpenStatus status = AccessoryOpenStatus::NotFound;
+	uint16_t vendor = 0;
+	uint16_t product = 0;
+	int interface_number = -1;
+	int error = 0;
+	bool saw_adb_interface = false;
 };
 
 bool is_likely_android_vendor(uint16_t vendor)
@@ -419,18 +447,26 @@ AccessoryRequestResult request_accessory_mode(UsbApi &api, libusb_device *device
 	return request;
 }
 
-bool select_accessory_endpoint(UsbApi &api, libusb_device *device, libusb_device_handle *handle,
-			       AccessoryConnection &connection)
+AccessoryOpenResult select_accessory_endpoint(UsbApi &api, libusb_device *device, libusb_device_handle *handle,
+					      AccessoryConnection &connection)
 {
+	AccessoryOpenResult result = {};
+
 	libusb_config_descriptor *config = nullptr;
 	if (api.get_active_config_descriptor(device, &config) != 0 || !config)
-		return false;
+		return result;
 
-	bool found = false;
-	for (uint8_t interface_index = 0; interface_index < config->bNumInterfaces && !found; ++interface_index) {
+	for (uint8_t interface_index = 0; interface_index < config->bNumInterfaces; ++interface_index) {
 		const libusb_interface &interface = config->interface[interface_index];
-		for (int alt_index = 0; alt_index < interface.num_altsetting && !found; ++alt_index) {
+		for (int alt_index = 0; alt_index < interface.num_altsetting; ++alt_index) {
 			const libusb_interface_descriptor &descriptor = interface.altsetting[alt_index];
+			if (is_adb_interface(descriptor)) {
+				result.saw_adb_interface = true;
+				continue;
+			}
+			if (!is_aoa_accessory_interface(descriptor))
+				continue;
+
 			unsigned char endpoint_in = 0;
 			for (uint8_t endpoint_index = 0; endpoint_index < descriptor.bNumEndpoints; ++endpoint_index) {
 				const libusb_endpoint_descriptor &endpoint = descriptor.endpoint[endpoint_index];
@@ -446,26 +482,35 @@ bool select_accessory_endpoint(UsbApi &api, libusb_device *device, libusb_device
 			const int interface_number = descriptor.bInterfaceNumber;
 			if (api.kernel_driver_active(handle, interface_number) == 1)
 				api.detach_kernel_driver(handle, interface_number);
-			if (api.claim_interface(handle, interface_number) == 0) {
+			const int claim_result = api.claim_interface(handle, interface_number);
+			if (claim_result == 0) {
 				connection.handle = handle;
 				connection.interface_number = interface_number;
 				connection.endpoint_in = endpoint_in;
-				found = true;
+				result.status = AccessoryOpenStatus::Opened;
+				result.interface_number = interface_number;
+				api.free_config_descriptor(config);
+				return result;
 			}
+
+			result.status = AccessoryOpenStatus::AccessoryInterfaceInaccessible;
+			result.interface_number = interface_number;
+			result.error = claim_result;
 		}
 	}
 
 	api.free_config_descriptor(config);
-	return found;
+	return result;
 }
 
-bool open_accessory(UsbApi &api, libusb_context *context, AccessoryConnection &connection)
+AccessoryOpenResult open_accessory(UsbApi &api, libusb_context *context, AccessoryConnection &connection)
 {
 	libusb_device **devices = nullptr;
 	const libusb_ssize_t count = api.get_device_list(context, &devices);
 	if (count < 0)
-		return false;
+		return {};
 
+	AccessoryOpenResult first_failure = {};
 	for (libusb_ssize_t index = 0; index < count; ++index) {
 		libusb_device *device = devices[index];
 		libusb_device_descriptor descriptor = {};
@@ -475,19 +520,34 @@ bool open_accessory(UsbApi &api, libusb_context *context, AccessoryConnection &c
 		}
 
 		libusb_device_handle *handle = nullptr;
-		if (api.open(device, &handle) != 0 || !handle)
+		const int open_result = api.open(device, &handle);
+		if (open_result != 0 || !handle) {
+			if (first_failure.status == AccessoryOpenStatus::NotFound) {
+				first_failure.status = AccessoryOpenStatus::OpenFailed;
+				first_failure.vendor = descriptor.idVendor;
+				first_failure.product = descriptor.idProduct;
+				first_failure.error = open_result != 0 ? open_result : LIBUSB_ERROR_NO_DEVICE;
+			}
 			continue;
+		}
 
-		if (select_accessory_endpoint(api, device, handle, connection)) {
+		AccessoryOpenResult result = select_accessory_endpoint(api, device, handle, connection);
+		result.vendor = descriptor.idVendor;
+		result.product = descriptor.idProduct;
+		if (result.status == AccessoryOpenStatus::Opened) {
 			api.free_device_list(devices, 1);
-			return true;
+			return result;
+		}
+		if (first_failure.status == AccessoryOpenStatus::NotFound &&
+		    (result.status != AccessoryOpenStatus::NotFound || result.saw_adb_interface)) {
+			first_failure = result;
 		}
 
 		api.close(handle);
 	}
 
 	api.free_device_list(devices, 1);
-	return false;
+	return first_failure;
 }
 
 AccessoryRequestResult request_first_android_accessory(UsbApi &api, libusb_context *context)
@@ -733,9 +793,56 @@ private:
 
 		AccessoryRequestResult last_request = {};
 		bool has_last_request = false;
+		AccessoryOpenResult last_open = {};
+		bool has_last_open = false;
 		while (!stop_requested.load()) {
 			AccessoryConnection connection;
-			if (!open_accessory(api, context, connection)) {
+			const AccessoryOpenResult open_result = open_accessory(api, context, connection);
+			if (open_result.status != AccessoryOpenStatus::Opened) {
+				const bool open_changed = !has_last_open || open_result.status != last_open.status ||
+							 open_result.vendor != last_open.vendor ||
+							 open_result.product != last_open.product ||
+							 open_result.interface_number != last_open.interface_number ||
+							 open_result.error != last_open.error ||
+							 open_result.saw_adb_interface != last_open.saw_adb_interface;
+				if (open_changed) {
+					switch (open_result.status) {
+					case AccessoryOpenStatus::OpenFailed:
+						obs_log(LOG_WARNING,
+							"[CaCam USB] Android Open Accessory device %04x:%04x is not "
+							"accessible: %s (%d). On Windows, verify the WinUSB driver.",
+							open_result.vendor, open_result.product,
+							usb_error_name(api, open_result.error), open_result.error);
+						break;
+					case AccessoryOpenStatus::AccessoryInterfaceInaccessible:
+						obs_log(LOG_WARNING,
+							"[CaCam USB] Android Open Accessory interface %d on %04x:%04x "
+							"is present but not accessible: %s (%d). Install a WinUSB "
+							"driver for the accessory interface. The ADB interface is not "
+							"the CaCam video stream.",
+							open_result.interface_number, open_result.vendor,
+							open_result.product, usb_error_name(api, open_result.error),
+							open_result.error);
+						break;
+					case AccessoryOpenStatus::NotFound:
+						if (open_result.saw_adb_interface)
+							obs_log(LOG_WARNING,
+								"[CaCam USB] Only the Android ADB interface is accessible. "
+								"Install a WinUSB driver for the Android Accessory "
+								"interface; ADB does not carry the CaCam video stream.");
+						break;
+					case AccessoryOpenStatus::Opened:
+						break;
+					}
+				}
+				last_open = open_result;
+				has_last_open = true;
+
+				if (open_result.status != AccessoryOpenStatus::NotFound || open_result.saw_adb_interface) {
+					sleep_retry();
+					continue;
+				}
+
 				const AccessoryRequestResult request = request_first_android_accessory(api, context);
 				const bool request_changed = !has_last_request || request.status != last_request.status ||
 							     request.vendor != last_request.vendor ||
@@ -774,6 +881,8 @@ private:
 				continue;
 			}
 
+			last_open = {};
+			has_last_open = false;
 			last_request = {};
 			has_last_request = false;
 			log_verbose("[CaCam USB] Accessory interface opened");
