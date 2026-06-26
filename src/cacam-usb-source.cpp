@@ -156,6 +156,7 @@ constexpr int ADB_DEVICE_PORT_DEFAULT = 8080;
 constexpr int ADB_SNAPSHOT_TIMEOUT_MS = 1200;
 constexpr int ADB_HEALTH_TIMEOUT_MS = 800;
 constexpr int ADB_HEALTH_RETRY_COUNT = 30;
+constexpr int ADB_COMMAND_TIMEOUT_MS = 30000;
 constexpr const char *CACAM_PACKAGE_NAME = "fr.lemegageek.cacam";
 
 enum class CacamConnectionMode {
@@ -477,10 +478,91 @@ std::string run_command_capture(const std::string &command, int *exit_code = nul
 {
 	std::string output;
 #ifdef _WIN32
-	FILE *pipe = _popen((command + " 2>&1").c_str(), "r");
+	SECURITY_ATTRIBUTES security_attributes = {};
+	security_attributes.nLength = sizeof(security_attributes);
+	security_attributes.bInheritHandle = TRUE;
+
+	HANDLE read_pipe = nullptr;
+	HANDLE write_pipe = nullptr;
+	if (!CreatePipe(&read_pipe, &write_pipe, &security_attributes, 0)) {
+		if (exit_code)
+			*exit_code = static_cast<int>(GetLastError());
+		return output;
+	}
+	SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
+
+	STARTUPINFOA startup_info = {};
+	startup_info.cb = sizeof(startup_info);
+	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+	startup_info.hStdOutput = write_pipe;
+	startup_info.hStdError = write_pipe;
+	startup_info.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+	startup_info.wShowWindow = SW_HIDE;
+
+	PROCESS_INFORMATION process_info = {};
+	std::vector<char> command_line(command.begin(), command.end());
+	command_line.push_back('\0');
+
+	if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr,
+			    &startup_info, &process_info)) {
+		const DWORD error = GetLastError();
+		CloseHandle(write_pipe);
+		CloseHandle(read_pipe);
+		if (exit_code)
+			*exit_code = static_cast<int>(error);
+		output = "CreateProcess failed with Windows error " + std::to_string(error);
+		return output;
+	}
+
+	CloseHandle(write_pipe);
+
+	std::array<char, 512> buffer = {};
+	bool timed_out = false;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ADB_COMMAND_TIMEOUT_MS);
+	for (;;) {
+		DWORD available = 0;
+		if (!PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &available, nullptr))
+			break;
+
+		while (available > 0) {
+			DWORD bytes_read = 0;
+			const DWORD to_read = std::min<DWORD>(static_cast<DWORD>(buffer.size()), available);
+			if (!ReadFile(read_pipe, buffer.data(), to_read, &bytes_read, nullptr) || bytes_read == 0)
+				break;
+			output.append(buffer.data(), bytes_read);
+			available -= bytes_read;
+		}
+
+		if (WaitForSingleObject(process_info.hProcess, 0) == WAIT_OBJECT_0) {
+			if (!PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &available, nullptr) || available == 0)
+				break;
+			continue;
+		}
+
+		if (std::chrono::steady_clock::now() >= deadline) {
+			timed_out = true;
+			TerminateProcess(process_info.hProcess, 1460);
+			WaitForSingleObject(process_info.hProcess, 1000);
+			break;
+		}
+
+		Sleep(25);
+	}
+
+	WaitForSingleObject(process_info.hProcess, INFINITE);
+	DWORD process_exit_code = 0;
+	GetExitCodeProcess(process_info.hProcess, &process_exit_code);
+	CloseHandle(process_info.hThread);
+	CloseHandle(process_info.hProcess);
+	CloseHandle(read_pipe);
+
+	if (timed_out)
+		output += "Command timed out";
+	if (exit_code)
+		*exit_code = timed_out ? -2 : static_cast<int>(process_exit_code);
+	return output;
 #else
 	FILE *pipe = popen((command + " 2>&1").c_str(), "r");
-#endif
 	if (!pipe) {
 		if (exit_code)
 			*exit_code = -1;
@@ -491,14 +573,11 @@ std::string run_command_capture(const std::string &command, int *exit_code = nul
 	while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe))
 		output += buffer.data();
 
-#ifdef _WIN32
-	const int close_code = _pclose(pipe);
-#else
 	const int close_code = pclose(pipe);
-#endif
 	if (exit_code)
 		*exit_code = close_code;
 	return output;
+#endif
 }
 
 std::string adb_command(const std::string &adb_path, const std::string &serial, const std::string &arguments)
