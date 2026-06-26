@@ -184,6 +184,38 @@ jobs:
 
           cmake -P ./scripts/download_deps.cmake
 
+      - name: Download Android platform-tools (Windows x64)
+        shell: pwsh
+        env:
+          PATH: '${{ env.FILTERED_PATH }}'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          . $env:CLEAN_PWSH_ENV
+
+          $VendorDir = Join-Path $pwd '.deps_vendor'
+          $Archive = Join-Path $VendorDir 'platform-tools-windows.zip'
+          $ExtractDir = Join-Path $VendorDir 'platform-tools-windows'
+          $Url = 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip'
+
+          New-Item -ItemType Directory -Path $VendorDir -Force
+          Invoke-WebRequest -Uri $Url -OutFile $Archive
+          Remove-Item -Path $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $Archive -DestinationPath $ExtractDir -Force
+
+          foreach ($RequiredPath in @(
+            "$ExtractDir\platform-tools\adb.exe",
+            "$ExtractDir\platform-tools\AdbWinApi.dll",
+            "$ExtractDir\platform-tools\AdbWinUsbApi.dll"
+          )) {
+            if (-not (Test-Path $RequiredPath -PathType Leaf)) {
+              Write-Error "Required Android platform-tools file is missing: $RequiredPath"
+              exit 1
+            }
+          }
+
       - name: Build libobs (Windows)
         shell: pwsh
         env:

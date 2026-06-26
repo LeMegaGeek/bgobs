@@ -148,6 +148,7 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
     if(PC_OPENCV_FOUND)
       add_library(OpenCV::opencv_core ALIAS PkgConfig::PC_OPENCV)
       add_library(OpenCV::opencv_imgproc ALIAS PkgConfig::PC_OPENCV)
+      add_library(OpenCV::opencv_imgcodecs ALIAS PkgConfig::PC_OPENCV)
       set(OpenCV_FOUND TRUE)
     endif()
   endif()
@@ -162,6 +163,10 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
 
   if(NOT TARGET OpenCV::opencv_imgproc)
     add_library(OpenCV::opencv_imgproc ALIAS opencv_imgproc)
+  endif()
+
+  if(NOT TARGET OpenCV::opencv_imgcodecs)
+    add_library(OpenCV::opencv_imgcodecs ALIAS opencv_imgcodecs)
   endif()
 endblock()
 
@@ -324,7 +329,9 @@ target_link_libraries(
     OBS::obs-frontend-api
     onnxruntime::onnxruntime
     CurlClient
+    CURL::libcurl
     OpenCV::opencv_core
+    OpenCV::opencv_imgcodecs
     OpenCV::opencv_imgproc
     bgobs_core
 )

@@ -129,6 +129,35 @@ try {
         Write-Warning "libusb-1.0.dll not found; CaCam USB will require libusb on PATH or next to bgobs.dll."
     }
 
+    $AdbSearchDirs = @(
+        (Join-Path $RootDir ".deps_vendor\platform-tools"),
+        (Join-Path $RootDir ".deps_vendor\platform-tools-windows\platform-tools"),
+        $env:ANDROID_PLATFORM_TOOLS,
+        "F:\Apps\Portable\AndroidPlatformTools\platform-tools"
+    ) | Where-Object { $_ }
+
+    $AdbCopied = $false
+    foreach ($Dir in $AdbSearchDirs) {
+        $AdbExe = Join-Path $Dir "adb.exe"
+        if (-not (Test-Path $AdbExe -PathType Leaf)) {
+            continue
+        }
+
+        $AdbDir = Join-Path $PluginBinDir "adb"
+        New-Item -ItemType Directory -Path $AdbDir -Force | Out-Null
+        foreach ($Name in @("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll", "NOTICE.txt", "source.properties")) {
+            $Candidate = Join-Path $Dir $Name
+            if (Test-Path $Candidate -PathType Leaf) {
+                Copy-Item $Candidate -Destination $AdbDir -Force
+            }
+        }
+        $AdbCopied = $true
+        break
+    }
+    if (-not $AdbCopied) {
+        Write-Warning "adb.exe not found; CaCam ADB will require adb.exe on PATH or in the source settings."
+    }
+
     # Copy scripts/windows files to root of zip
     $ScriptsWin = Join-Path $ScriptDir "windows"
     if (Test-Path $ScriptsWin) {

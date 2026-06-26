@@ -2,9 +2,10 @@
 
 BGOBS, pour **Beau Gosse OBS**, est un plugin OBS Studio qui retire ou floute l'arriere-plan d'une webcam tout en cherchant un contour plus propre autour du sujet.
 
-Depuis la version `0.3.0`, BGOBS ajoute une source **CaCam USB** pour utiliser un telephone
-Android comme camera OBS sans partage de connexion USB, sans ADB et sans
-modifier les routes reseau du PC.
+Depuis la version `0.3.11`, BGOBS expose une source **CaCam** avec deux modes :
+USB direct et ADB. Le mode USB evite le partage de connexion Android, ADB et les
+routes reseau du PC. Le mode ADB utilise `adb forward` pour piloter CaCam et lire
+le flux local quand le telephone de test autorise le debogage USB.
 
 ## Ce Que Fait BGOBS
 
@@ -14,10 +15,21 @@ modifier les routes reseau du PC.
 - applique un lissage temporel pour limiter les contours qui tremblent ;
 - affine les bords avec l'image source pour reduire les halos ;
 - conserve le flou d'arriere-plan et l'amelioration basse lumiere du projet d'origine.
-- ajoute une source OBS **CaCam USB** compatible avec le preset `USB BGOBS` de
-  l'application Android CaCam.
+- ajoute une source OBS **CaCam** compatible avec les modes `USB BGOBS` et `ADB`
+  de l'application Android CaCam.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
+
+## Version 0.3.11
+
+- Renomme la source **CaCam USB** en **CaCam** et ajoute un choix de connexion
+  `USB` ou `ADB`.
+- Ajoute les qualites `Pourri`, `Bas`, `Standard`, `HD` et `UHD` directement
+  dans les proprietes de la source.
+- Separe l'option **Optimise pour BGOBS** du choix de qualite.
+- Embarque Android platform-tools dans le ZIP Windows quand le build les trouve,
+  afin que le mode `ADB` puisse fonctionner sans installation systeme d'ADB.
+- Conserve les logs detailles decochees par defaut.
 
 ## Version 0.3.10
 
@@ -136,11 +148,26 @@ Avec une source existante :
 Avec CaCam en USB direct :
 
 1. Branche le telephone Android au PC en USB.
-2. Dans CaCam, choisis le preset **USB BGOBS** et demarre le flux.
-3. Dans OBS, ajoute la source **CaCam USB**.
-4. Accepte l'autorisation USB sur le telephone si Android la demande.
-5. Deverrouille le telephone et laisse CaCam visible jusqu'a la premiere image.
-6. Ajoute le filtre **Rend-moi beau gosse** sur la source **CaCam USB**.
+2. Dans CaCam, choisis le type de connexion **USB BGOBS** et demarre le flux.
+3. Dans OBS, ajoute la source **CaCam**.
+4. Dans les proprietes de la source, choisis le mode **USB**.
+5. Accepte l'autorisation USB sur le telephone si Android la demande.
+6. Deverrouille le telephone et laisse CaCam visible jusqu'a la premiere image.
+7. Ajoute le filtre **Rend-moi beau gosse** sur la source **CaCam**.
+
+Avec CaCam en ADB :
+
+1. Branche le telephone Android au PC en USB et autorise le debogage USB.
+2. Dans OBS, ajoute la source **CaCam**.
+3. Dans les proprietes de la source, choisis le mode **ADB**.
+4. Choisis la qualite `Standard`, `HD` ou `UHD`.
+5. Laisse **Optimise pour BGOBS** coche si tu comptes ajouter le filtre BGOBS.
+6. Ajoute le filtre **Rend-moi beau gosse** sur la source **CaCam**.
+
+Le mode ADB lance CaCam sur le telephone, cree un `adb forward` vers
+`127.0.0.1:18080` et lit les snapshots HTTP sans ajouter de source navigateur
+OBS. Le ZIP Windows embarque `adb` dans `bgobs/bin/64bit/adb/` quand les
+platform-tools sont disponibles pendant le build.
 
 Une lumiere frontale douce reste souvent plus efficace qu'un modele plus lourd. Les contours difficiles viennent souvent d'un contre-jour, d'un fond trop proche de la couleur des cheveux, ou d'une webcam trop compressee.
 
@@ -177,9 +204,10 @@ Pour OBS PortableApps, ferme OBS, decompresse le ZIP puis lance
 `install-portable.bat`. Le script reconnait les lanceurs `OBSPortable.exe` et
 `OBS-StudioPortable.exe`, puis installe automatiquement le plugin et ses donnees.
 
-Apres redemarrage d'OBS, ajoute la source **CaCam USB**. Le fichier
-`libusb-1.0.dll` doit rester a cote de `bgobs.dll` pour que cette source soit
-proposee.
+Apres redemarrage d'OBS, ajoute la source **CaCam**. Le fichier
+`libusb-1.0.dll` doit rester a cote de `bgobs.dll` pour que le mode USB soit
+disponible. Le dossier `adb\` doit rester a cote de `bgobs.dll` pour utiliser le
+mode ADB sans installation ADB systeme.
 
 L'installation manuelle reste possible. Le ZIP Windows doit contenir un dossier
 `bgobs`.
@@ -204,6 +232,7 @@ La disposition finale doit inclure :
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\libusb-1.0.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\adb\adb.exe
 <OBS-StudioPortable>\App\obs-studio\data\obs-plugins\bgobs\models\
 <OBS-StudioPortable>\Data\obs-plugins\bgobs\models\
 ```

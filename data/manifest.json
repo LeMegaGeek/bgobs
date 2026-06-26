@@ -1,7 +1,7 @@
 {
   "display_name": "BGOBS",
   "id": "net.lemegageek.bgobs",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "name": "bgobs",
   "description": "BGOBS: Beau Gosse OBS",
   "long_description": "A BGOBS plugin for OBS Studio that removes and softens webcam backgrounds.",

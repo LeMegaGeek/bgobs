@@ -11,7 +11,7 @@
 extern void blogva(int log_level, const char *format, va_list args);
 
 const char *PLUGIN_NAME = "bgobs";
-const char *PLUGIN_VERSION = "0.3.10";
+const char *PLUGIN_VERSION = "0.3.11";
 
 void bgobs_logv(int log_level, const char *format, va_list args)
 {
