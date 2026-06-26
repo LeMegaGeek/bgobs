@@ -20,6 +20,12 @@ le flux local quand le telephone de test autorise le debogage USB.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.14
+
+- Synchronise les versions embarquees dans le manifeste OBS et dans le module
+  charge par OBS.
+- Reprend le correctif ADB Windows de `0.3.13`.
+
 ## Version 0.3.13
 
 - Corrige le lancement ADB sous Windows pour ne plus ouvrir de fenetres `cmd.exe`
