@@ -20,6 +20,12 @@ le flux local quand le telephone de test autorise le debogage USB.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.12
+
+- Corrige `install-portable.bat` pour copier recursivement tout `bin\64bit`,
+  y compris le dossier `adb\` embarque.
+- Met a jour les instructions Windows pour la source **CaCam** et le mode ADB.
+
 ## Version 0.3.11
 
 - Renomme la source **CaCam USB** en **CaCam** et ajoute un choix de connexion
