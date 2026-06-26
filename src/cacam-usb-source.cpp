@@ -1163,9 +1163,23 @@ private:
 		const std::vector<std::string> serials = adb_device_serials(devices_output);
 		if (!settings.adb_serial.empty()) {
 			serial = settings.adb_serial;
-			if (std::find(serials.begin(), serials.end(), serial) == serials.end())
+			if (std::find(serials.begin(), serials.end(), serial) == serials.end()) {
 				obs_log(LOG_WARNING, "[CaCam ADB] Configured device %s is not currently listed as authorized",
 					serial.c_str());
+				if (serials.empty()) {
+					obs_log(LOG_WARNING,
+						"[CaCam ADB] No authorized ADB phone. Unlock the phone and accept USB debugging.");
+					return false;
+				}
+				if (serials.size() > 1) {
+					obs_log(LOG_WARNING,
+						"[CaCam ADB] Multiple ADB phones are authorized; set the serial in source properties.");
+					return false;
+				}
+				serial = serials.front();
+				obs_log(LOG_INFO, "[CaCam ADB] Falling back to the only authorized ADB phone: %s",
+					serial.c_str());
+			}
 		} else {
 			if (serials.empty()) {
 				obs_log(LOG_WARNING, "[CaCam ADB] No authorized ADB phone. Unlock the phone and accept USB debugging.");
