@@ -20,6 +20,15 @@ le flux local quand le telephone de test autorise le debogage USB.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.15
+
+- Lance CaCam en mode ADB avec un FPS explicite pour eviter qu'un ancien
+  reglage manuel, notamment 60 FPS, reste actif.
+- Stabilise la source CaCam sur le canevas video OBS afin que le rectangle de
+  scene ne change plus quand la qualite du flux change.
+- Retient Low/12 FPS comme reglage de test fluide pour le MI8 via ADB sur le
+  poste portable.
+
 ## Version 0.3.14
 
 - Synchronise les versions embarquees dans le manifeste OBS et dans le module

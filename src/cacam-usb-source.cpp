@@ -158,6 +158,16 @@ constexpr int ADB_HEALTH_TIMEOUT_MS = 800;
 constexpr int ADB_HEALTH_RETRY_COUNT = 30;
 constexpr int ADB_COMMAND_TIMEOUT_MS = 30000;
 constexpr const char *CACAM_PACKAGE_NAME = "fr.lemegageek.cacam";
+constexpr uint32_t DEFAULT_SOURCE_WIDTH = 1280;
+constexpr uint32_t DEFAULT_SOURCE_HEIGHT = 720;
+
+std::pair<uint32_t, uint32_t> source_canvas_size()
+{
+	struct obs_video_info video_info = {};
+	if (obs_get_video_info(&video_info) && video_info.base_width > 0 && video_info.base_height > 0)
+		return {video_info.base_width, video_info.base_height};
+	return {DEFAULT_SOURCE_WIDTH, DEFAULT_SOURCE_HEIGHT};
+}
 
 enum class CacamConnectionMode {
 	Usb,
@@ -183,7 +193,7 @@ struct CacamQualityInfo {
 
 constexpr CacamQualityInfo QUALITY_INFOS[] = {
 	{CacamQuality::Pourri, "pourri", "Pourri", 426, 240, 8},
-	{CacamQuality::Low, "low", "Low", 640, 360, 10},
+	{CacamQuality::Low, "low", "Low", 640, 360, 12},
 	{CacamQuality::Standard, "standard", "Standard", 854, 480, 12},
 	{CacamQuality::Hd, "hd", "Hd", 1920, 1080, 20},
 	{CacamQuality::Uhd, "uhd", "Uhd", 3840, 2160, 15},
@@ -1034,12 +1044,6 @@ public:
 			current_settings = next_settings;
 		}
 
-		const CacamQualityInfo &info = quality_info(next_settings.quality);
-		if (next_settings.connection_mode == CacamConnectionMode::Adb) {
-			width.store(info.width);
-			height.store(info.height);
-		}
-
 		if (should_restart)
 			stop();
 
@@ -1069,8 +1073,8 @@ public:
 			stop();
 	}
 
-	uint32_t get_width() const { return width.load(); }
-	uint32_t get_height() const { return height.load(); }
+	uint32_t get_width() const { return source_canvas_size().first; }
+	uint32_t get_height() const { return source_canvas_size().second; }
 
 private:
 	obs_source_t *source = nullptr;
@@ -1079,8 +1083,6 @@ private:
 	mutable std::mutex settings_mutex;
 	std::atomic<bool> stop_requested{false};
 	std::atomic<bool> verbose_logging{false};
-	std::atomic<uint32_t> width{1280};
-	std::atomic<uint32_t> height{720};
 	std::array<std::vector<unsigned char>, 3> video_buffers;
 	size_t video_buffer_index = 0;
 	SourceSettings current_settings;
@@ -1210,6 +1212,7 @@ private:
 		const std::string launch_arguments =
 			"shell am start --activity-single-top -n " + shell_quote(component) +
 			" --es connection ADB --es quality " + shell_quote(info.intent_value) +
+			" --ei fps " + std::to_string(info.fps) +
 			" --ez bgobs_optimized " + (settings.bgobs_optimized ? "true" : "false") +
 			" --ez start_stream true";
 		const std::string launch_output = run_command_capture(adb_command(adb_path, serial, launch_arguments), &exit_code);
@@ -1526,24 +1529,9 @@ private:
 		if (bgr.empty())
 			return false;
 
-		auto &video_buffer = video_buffers[video_buffer_index];
-		video_buffer_index = (video_buffer_index + 1) % video_buffers.size();
-		video_buffer.resize(static_cast<size_t>(bgr.cols) * static_cast<size_t>(bgr.rows) * 4);
-		cv::Mat bgra(bgr.rows, bgr.cols, CV_8UC4, video_buffer.data());
+		cv::Mat bgra;
 		cv::cvtColor(bgr, bgra, cv::COLOR_BGR2BGRA);
-
-		width.store(static_cast<uint32_t>(bgra.cols));
-		height.store(static_cast<uint32_t>(bgra.rows));
-
-		obs_source_frame frame = {};
-		frame.format = VIDEO_FORMAT_BGRA;
-		frame.width = static_cast<uint32_t>(bgra.cols);
-		frame.height = static_cast<uint32_t>(bgra.rows);
-		frame.data[0] = bgra.data;
-		frame.linesize[0] = static_cast<uint32_t>(bgra.step[0]);
-		frame.timestamp = os_gettime_ns();
-		obs_source_output_video(source, &frame);
-		return true;
+		return output_bgra_frame(bgra);
 	}
 
 	bool output_nv21(const std::vector<unsigned char> &payload, uint64_t message_timestamp_us)
@@ -1565,24 +1553,42 @@ private:
 		auto *frame_data = const_cast<unsigned char *>(payload.data() + CACAM_FRAME_METADATA_SIZE);
 		const cv::Mat nv21(static_cast<int>(frame_height + frame_height / 2), static_cast<int>(frame_width),
 				   CV_8UC1, frame_data);
+		cv::Mat bgra;
+		cv::cvtColor(nv21, bgra, cv::COLOR_YUV2BGRA_NV21);
+		UNUSED_PARAMETER(message_timestamp_us);
+		UNUSED_PARAMETER(frame_timestamp_us);
+		return output_bgra_frame(bgra);
+	}
+
+	bool output_bgra_frame(const cv::Mat &bgra)
+	{
+		if (bgra.empty())
+			return false;
+
+		const auto [canvas_width, canvas_height] = source_canvas_size();
 		auto &video_buffer = video_buffers[video_buffer_index];
 		video_buffer_index = (video_buffer_index + 1) % video_buffers.size();
-		video_buffer.resize(static_cast<size_t>(frame_width) * static_cast<size_t>(frame_height) * 4);
-		cv::Mat bgra(static_cast<int>(frame_height), static_cast<int>(frame_width), CV_8UC4,
-			     video_buffer.data());
-		cv::cvtColor(nv21, bgra, cv::COLOR_YUV2BGRA_NV21);
+		video_buffer.resize(static_cast<size_t>(canvas_width) * static_cast<size_t>(canvas_height) * 4);
 
-		width.store(static_cast<uint32_t>(bgra.cols));
-		height.store(static_cast<uint32_t>(bgra.rows));
+		cv::Mat output(static_cast<int>(canvas_height), static_cast<int>(canvas_width), CV_8UC4, video_buffer.data());
+		output.setTo(cv::Scalar(0, 0, 0, 255));
+
+		const double scale =
+			std::min(static_cast<double>(canvas_width) / static_cast<double>(bgra.cols),
+				 static_cast<double>(canvas_height) / static_cast<double>(bgra.rows));
+		const int scaled_width = std::max(1, static_cast<int>(static_cast<double>(bgra.cols) * scale));
+		const int scaled_height = std::max(1, static_cast<int>(static_cast<double>(bgra.rows) * scale));
+		const int x = (static_cast<int>(canvas_width) - scaled_width) / 2;
+		const int y = (static_cast<int>(canvas_height) - scaled_height) / 2;
+		cv::Mat roi = output(cv::Rect(x, y, scaled_width, scaled_height));
+		cv::resize(bgra, roi, roi.size(), 0, 0, cv::INTER_AREA);
 
 		obs_source_frame frame = {};
 		frame.format = VIDEO_FORMAT_BGRA;
-		frame.width = static_cast<uint32_t>(bgra.cols);
-		frame.height = static_cast<uint32_t>(bgra.rows);
-		frame.data[0] = bgra.data;
-		frame.linesize[0] = static_cast<uint32_t>(bgra.step[0]);
-		UNUSED_PARAMETER(message_timestamp_us);
-		UNUSED_PARAMETER(frame_timestamp_us);
+		frame.width = canvas_width;
+		frame.height = canvas_height;
+		frame.data[0] = output.data;
+		frame.linesize[0] = static_cast<uint32_t>(output.step[0]);
 		frame.timestamp = os_gettime_ns();
 		obs_source_output_video(source, &frame);
 		return true;
@@ -1620,13 +1626,13 @@ extern "C" void cacam_usb_source_destroy(void *data)
 extern "C" uint32_t cacam_usb_source_get_width(void *data)
 {
 	const auto *source = static_cast<CacamUsbSource *>(data);
-	return source ? source->get_width() : 1280;
+	return source ? source->get_width() : source_canvas_size().first;
 }
 
 extern "C" uint32_t cacam_usb_source_get_height(void *data)
 {
 	const auto *source = static_cast<CacamUsbSource *>(data);
-	return source ? source->get_height() : 720;
+	return source ? source->get_height() : source_canvas_size().second;
 }
 
 extern "C" void cacam_usb_source_defaults(obs_data_t *settings)
