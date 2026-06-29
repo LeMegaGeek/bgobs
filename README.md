@@ -20,6 +20,11 @@ le flux local quand le telephone de test autorise le debogage USB.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.17
+
+- Conserve le **Style BGOBS** choisi apres fermeture et reouverture de la
+  fenetre des filtres OBS.
+
 ## Version 0.3.16
 
 - Remplit le rectangle OBS de la source CaCam avec un recadrage centre, au lieu

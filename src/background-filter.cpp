@@ -106,6 +106,21 @@ const BackgroundBeautyPreset BGOBS_PRESETS[] = {
 	{BGOBS_PRESET_PERFORMANCE, 0.52, 0.04, 0.15, 0.10, 0.050, 0.32, 0.65, 38.0, 0, 2, 1},
 };
 
+thread_local bool applyingBeautyPreset = false;
+
+class BeautyPresetApplicationGuard {
+public:
+	BeautyPresetApplicationGuard() : previous(applyingBeautyPreset)
+	{
+		applyingBeautyPreset = true;
+	}
+
+	~BeautyPresetApplicationGuard() { applyingBeautyPreset = previous; }
+
+private:
+	bool previous;
+};
+
 const BackgroundBeautyPreset *findBeautyPreset(const char *presetId)
 {
 	if (!presetId || strcmp(presetId, BGOBS_PRESET_CUSTOM) == 0) {
@@ -148,6 +163,9 @@ void applyBeautyPreset(obs_data_t *settings, const BackgroundBeautyPreset &prese
 
 void markBeautyPresetCustom(obs_data_t *settings)
 {
+	if (applyingBeautyPreset) {
+		return;
+	}
 	if (settings) {
 		obs_data_set_string(settings, "beauty_preset", BGOBS_PRESET_CUSTOM);
 	}
@@ -205,7 +223,9 @@ static bool beauty_preset_modified(obs_properties_t *ppts, obs_property_t *p, ob
 
 	const BackgroundBeautyPreset *preset = findBeautyPreset(obs_data_get_string(settings, "beauty_preset"));
 	if (preset) {
+		BeautyPresetApplicationGuard guard;
 		applyBeautyPreset(settings, *preset);
+		obs_data_set_string(settings, "beauty_preset", preset->id);
 	}
 
 	return true;
@@ -457,6 +477,7 @@ void background_filter_update(void *data, obs_data_t *settings)
 	const char *beautyPreset = obs_data_get_string(settings, "beauty_preset");
 	tf->beautyPreset = beautyPreset ? beautyPreset : BGOBS_PRESET_CUSTOM;
 	if (const BackgroundBeautyPreset *preset = findBeautyPreset(tf->beautyPreset.c_str())) {
+		BeautyPresetApplicationGuard guard;
 		applyBeautyPreset(settings, *preset);
 		obs_data_set_string(settings, "beauty_preset", preset->id);
 		tf->beautyPreset = preset->id;
