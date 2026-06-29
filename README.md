@@ -20,6 +20,13 @@ le flux local quand le telephone de test autorise le debogage USB.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.18
+
+- Garde le **Style BGOBS** selectionne lorsque OBS reconstruit les proprietes
+  du filtre ou sauvegarde la collection de scenes.
+- Reconnait a nouveau un preset quand une ancienne sauvegarde indique
+  `Personnalise` mais contient exactement les valeurs d'un style BGOBS.
+
 ## Version 0.3.17
 
 - Conserve le **Style BGOBS** choisi apres fermeture et reouverture de la

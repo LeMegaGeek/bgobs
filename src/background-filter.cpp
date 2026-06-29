@@ -14,6 +14,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <cstring>
+#include <cmath>
 #include <numeric>
 #include <memory>
 #include <exception>
@@ -144,6 +145,44 @@ const BackgroundBeautyPreset *findBeautyPreset(const char *presetId)
 	return nullptr;
 }
 
+bool doubleMatches(double actual, double expected)
+{
+	return std::abs(actual - expected) <= 0.000001;
+}
+
+bool settingsMatchBeautyPreset(obs_data_t *settings, const BackgroundBeautyPreset &preset)
+{
+	if (!settings) {
+		return false;
+	}
+
+	return obs_data_get_bool(settings, "enable_threshold") &&
+	       doubleMatches(obs_data_get_double(settings, "threshold"), preset.threshold) &&
+	       doubleMatches(obs_data_get_double(settings, "edge_softness"), preset.edgeSoftness) &&
+	       doubleMatches(obs_data_get_double(settings, "edge_refinement"), preset.edgeRefinement) &&
+	       doubleMatches(obs_data_get_double(settings, "foreground_cleanup"), preset.foregroundCleanup) &&
+	       doubleMatches(obs_data_get_double(settings, "contour_filter"), preset.contourFilter) &&
+	       doubleMatches(obs_data_get_double(settings, "smooth_contour"), preset.smoothContour) &&
+	       doubleMatches(obs_data_get_double(settings, "temporal_smooth_factor"), preset.temporalSmoothFactor) &&
+	       doubleMatches(obs_data_get_double(settings, "image_similarity_threshold"),
+			     preset.imageSimilarityThreshold) &&
+	       obs_data_get_bool(settings, "enable_image_similarity") &&
+	       doubleMatches(obs_data_get_double(settings, "mask_expansion"), preset.maskExpansion) &&
+	       obs_data_get_int(settings, "mask_every_x_frames") == preset.maskEveryXFrames &&
+	       obs_data_get_int(settings, "numThreads") == preset.numThreads;
+}
+
+const BackgroundBeautyPreset *findMatchingBeautyPreset(obs_data_t *settings)
+{
+	for (const BackgroundBeautyPreset &preset : BGOBS_PRESETS) {
+		if (settingsMatchBeautyPreset(settings, preset)) {
+			return &preset;
+		}
+	}
+
+	return nullptr;
+}
+
 void applyBeautyPreset(obs_data_t *settings, const BackgroundBeautyPreset &preset)
 {
 	obs_data_set_bool(settings, "enable_threshold", true);
@@ -166,9 +205,22 @@ void markBeautyPresetCustom(obs_data_t *settings)
 	if (applyingBeautyPreset) {
 		return;
 	}
-	if (settings) {
-		obs_data_set_string(settings, "beauty_preset", BGOBS_PRESET_CUSTOM);
+
+	if (!settings) {
+		return;
 	}
+
+	if (const BackgroundBeautyPreset *preset = findBeautyPreset(obs_data_get_string(settings, "beauty_preset"));
+	    preset && settingsMatchBeautyPreset(settings, *preset)) {
+		return;
+	}
+
+	if (const BackgroundBeautyPreset *preset = findMatchingBeautyPreset(settings)) {
+		obs_data_set_string(settings, "beauty_preset", preset->id);
+		return;
+	}
+
+	obs_data_set_string(settings, "beauty_preset", BGOBS_PRESET_CUSTOM);
 }
 
 void setPropertyVisible(obs_properties_t *ppts, const char *propertyName, bool visible)
@@ -476,7 +528,11 @@ void background_filter_update(void *data, obs_data_t *settings)
 
 	const char *beautyPreset = obs_data_get_string(settings, "beauty_preset");
 	tf->beautyPreset = beautyPreset ? beautyPreset : BGOBS_PRESET_CUSTOM;
-	if (const BackgroundBeautyPreset *preset = findBeautyPreset(tf->beautyPreset.c_str())) {
+	const BackgroundBeautyPreset *preset = findBeautyPreset(tf->beautyPreset.c_str());
+	if (!preset && tf->beautyPreset == BGOBS_PRESET_CUSTOM) {
+		preset = findMatchingBeautyPreset(settings);
+	}
+	if (preset) {
 		BeautyPresetApplicationGuard guard;
 		applyBeautyPreset(settings, *preset);
 		obs_data_set_string(settings, "beauty_preset", preset->id);
