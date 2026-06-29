@@ -1571,17 +1571,29 @@ private:
 		video_buffer.resize(static_cast<size_t>(canvas_width) * static_cast<size_t>(canvas_height) * 4);
 
 		cv::Mat output(static_cast<int>(canvas_height), static_cast<int>(canvas_width), CV_8UC4, video_buffer.data());
-		output.setTo(cv::Scalar(0, 0, 0, 255));
 
-		const double scale =
-			std::min(static_cast<double>(canvas_width) / static_cast<double>(bgra.cols),
-				 static_cast<double>(canvas_height) / static_cast<double>(bgra.rows));
-		const int scaled_width = std::max(1, static_cast<int>(static_cast<double>(bgra.cols) * scale));
-		const int scaled_height = std::max(1, static_cast<int>(static_cast<double>(bgra.rows) * scale));
-		const int x = (static_cast<int>(canvas_width) - scaled_width) / 2;
-		const int y = (static_cast<int>(canvas_height) - scaled_height) / 2;
-		cv::Mat roi = output(cv::Rect(x, y, scaled_width, scaled_height));
-		cv::resize(bgra, roi, roi.size(), 0, 0, cv::INTER_AREA);
+		const double canvas_aspect = static_cast<double>(canvas_width) / static_cast<double>(canvas_height);
+		const double frame_aspect = static_cast<double>(bgra.cols) / static_cast<double>(bgra.rows);
+		int crop_x = 0;
+		int crop_y = 0;
+		int crop_width = bgra.cols;
+		int crop_height = bgra.rows;
+		if (frame_aspect > canvas_aspect) {
+			crop_width = std::max(1, static_cast<int>(static_cast<double>(bgra.rows) * canvas_aspect));
+			crop_x = std::max(0, (bgra.cols - crop_width) / 2);
+		} else if (frame_aspect < canvas_aspect) {
+			crop_height = std::max(1, static_cast<int>(static_cast<double>(bgra.cols) / canvas_aspect));
+			crop_y = std::max(0, (bgra.rows - crop_height) / 2);
+		}
+
+		crop_width = std::min(crop_width, bgra.cols - crop_x);
+		crop_height = std::min(crop_height, bgra.rows - crop_y);
+		const cv::Mat crop = bgra(cv::Rect(crop_x, crop_y, crop_width, crop_height));
+		const int interpolation =
+			crop.cols > static_cast<int>(canvas_width) || crop.rows > static_cast<int>(canvas_height)
+				? cv::INTER_AREA
+				: cv::INTER_LINEAR;
+		cv::resize(crop, output, output.size(), 0, 0, interpolation);
 
 		obs_source_frame frame = {};
 		frame.format = VIDEO_FORMAT_BGRA;
