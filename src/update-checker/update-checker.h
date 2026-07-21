@@ -12,6 +12,7 @@ extern "C" {
 #endif
 
 void check_update(void);
+void shutdown_update_checker(void);
 const char *get_latest_version(void);
 
 #ifdef __cplusplus

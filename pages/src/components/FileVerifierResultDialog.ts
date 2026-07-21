@@ -3,6 +3,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { verifyFileResult } from "../lib/file-verification.mjs";
+
 export interface FileVerifierReleaseAsset {
   name: string;
   size: number;
@@ -66,43 +68,36 @@ export class FileVerifierResultDialog extends HTMLElement {
     dt.style.fontWeight = "bold";
     this.listElement.appendChild(dt);
 
-    if (item.error) {
+    const verification = verifyFileResult(this.releaseAssets, item);
+    if (verification.kind === "error") {
       const dd = document.createElement("dd");
-      const errorMessage =
-        item.error instanceof Error ? item.error.message : String(item.error);
-      dd.textContent = `❌ Error: ${errorMessage}`;
+      dd.textContent = `❌ Error: ${verification.message}`;
       this.listElement.appendChild(dd);
       return;
     }
 
-    if (item.sha256) {
-      const expectedAsset = this.releaseAssets.find(
-        (asset) => asset.digest === `sha256:${item.sha256}`,
-      );
+    if (verification.kind === "official") {
+      const expectedAsset = verification.asset;
 
-      if (expectedAsset) {
-        const isSizeMatch = expectedAsset.size === item.size;
+      const ddName = document.createElement("dd");
+      ddName.textContent = `✅ Official Name: ${expectedAsset.name}`;
+      this.listElement.appendChild(ddName);
 
-        const ddName = document.createElement("dd");
-        ddName.textContent = `✅ Official Name: ${expectedAsset.name}`;
-        this.listElement.appendChild(ddName);
+      const ddHash = document.createElement("dd");
+      ddHash.textContent = `✅ SHA-256: ${verification.sha256}`;
+      this.listElement.appendChild(ddHash);
 
-        const ddHash = document.createElement("dd");
-        ddHash.textContent = `✅ SHA-256: ${item.sha256}`;
-        this.listElement.appendChild(ddHash);
-
-        const ddSize = document.createElement("dd");
-        if (isSizeMatch) {
-          ddSize.textContent = `✅ Size: ${item.size} bytes`;
-        } else {
-          ddSize.textContent = `❌ Size: ${item.size} bytes (Expected: ${expectedAsset.size} bytes)`;
-        }
-        this.listElement.appendChild(ddSize);
+      const ddSize = document.createElement("dd");
+      if (verification.sizeMatches) {
+        ddSize.textContent = `✅ Size: ${verification.actualSize} bytes`;
       } else {
-        const ddUnknown = document.createElement("dd");
-        ddUnknown.textContent = "❌ Unknown file (SHA-256 verification failed)";
-        this.listElement.appendChild(ddUnknown);
+        ddSize.textContent = `❌ Size: ${verification.actualSize} bytes (Expected: ${expectedAsset.size} bytes)`;
       }
+      this.listElement.appendChild(ddSize);
+    } else if (verification.kind === "unknown") {
+      const ddUnknown = document.createElement("dd");
+      ddUnknown.textContent = "❌ Unknown file (SHA-256 verification failed)";
+      this.listElement.appendChild(ddUnknown);
     } else {
       const ddError = document.createElement("dd");
       ddError.textContent = "❌ Unknown Error (No hash provided)";

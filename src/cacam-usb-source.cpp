@@ -718,10 +718,15 @@ private:
 
 	void stop()
 	{
-		std::lock_guard<std::mutex> guard(worker_mutex);
-		stop_requested.store(true);
-		if (worker.joinable())
-			worker.join();
+		std::thread worker_to_join;
+		{
+			std::lock_guard<std::mutex> guard(worker_mutex);
+			stop_requested.store(true);
+			if (worker.joinable())
+				worker_to_join = std::move(worker);
+		}
+		if (worker_to_join.joinable())
+			worker_to_join.join();
 	}
 
 	void worker_loop()
@@ -875,7 +880,8 @@ private:
 		const uint32_t frame_width = read_u32_be(payload.data());
 		const uint32_t frame_height = read_u32_be(payload.data() + 4);
 		const uint64_t frame_timestamp_us = read_u64_be(payload.data() + 8);
-		if (frame_width == 0 || frame_height == 0 || frame_width > 4096 || frame_height > 4096)
+		if (frame_width == 0 || frame_height == 0 || frame_width > 4096 || frame_height > 4096 ||
+		    frame_width % 2 != 0 || frame_height % 2 != 0)
 			return false;
 
 		const size_t expected_size =

@@ -11,7 +11,12 @@ import { Image } from "astro:assets";
 
 import DefineLocalDate from "../components/DefineLocalDate.astro";
 
-import { GITHUB_OWNER, GITHUB_REPO, PRODUCTION_BASE_URL, PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL } from "../lib/info.js";
+import {
+  GITHUB_OWNER,
+  GITHUB_REPO,
+  PRODUCTION_BASE_URL,
+  PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL,
+} from "../lib/info.js";
 
 import Layout from "../layouts/Layout.astro";
 
@@ -104,11 +109,7 @@ const release = await getLatestRelease();
         </a>
       </div>
       <div class="video-tutorials-button">
-        <a
-          href={PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL}
-        >
-          ▶︎ YouTube Tutorials
-        </a>
+        <a href={PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL}> ▶︎ YouTube Tutorials </a>
       </div>
     </section>
 

@@ -18,8 +18,10 @@ static const std::string GITHUB_LATEST_RELEASE_URL = "https://api.github.com/rep
 void github_utils_get_release_information(std::function<void(github_utils_release_information)> callback)
 {
 	fetchStringFromUrl(GITHUB_LATEST_RELEASE_URL.c_str(), [callback](std::string responseBody, int code) {
-		if (code != 0)
+		if (code != 0) {
+			callback({OBS_BGREMOVAL_GITHUB_UTILS_ERROR, "", ""});
 			return;
+		}
 		// Parse the JSON response
 		obs_data_t *data = obs_data_create_from_json(responseBody.c_str());
 		if (!data) {

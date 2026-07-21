@@ -9,7 +9,12 @@ import { Octokit, type RestEndpointMethodTypes } from "@octokit/rest";
 
 import Layout from "../layouts/Layout.astro";
 
-import { GITHUB_OWNER, GITHUB_REPO, PRODUCTION_BASE_URL, PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL } from "../lib/info.js";
+import {
+  GITHUB_OWNER,
+  GITHUB_REPO,
+  PRODUCTION_BASE_URL,
+  PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL,
+} from "../lib/info.js";
 
 import GitHubMarkWhite from "../../public/github-mark-white.svg";
 
@@ -32,7 +37,7 @@ async function getLatestRelease(): Promise<LatestRelease> {
 const release = await getLatestRelease();
 
 const assetX64 = release.assets.find((e) => /windows-x64\.zip/.test(e.name));
-if (!assetX64) throw new Error("Windows x64 asset not found!");
+const downloadUrlX64 = assetX64?.browser_download_url ?? release.html_url;
 ---
 
 <Layout lang="en" title="Windows Installation Guide - Background Removal">
@@ -79,11 +84,7 @@ if (!assetX64) throw new Error("Windows x64 asset not found!");
         </a>
       </div>
       <div class="video-tutorials-button">
-        <a
-          href={PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL}
-        >
-          ▶︎ YouTube Tutorials
-        </a>
+        <a href={PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL}> ▶︎ YouTube Tutorials </a>
       </div>
     </section>
 
@@ -104,9 +105,7 @@ if (!assetX64) throw new Error("Windows x64 asset not found!");
           <dd><a href={release.html_url}>{release.html_url}</a></dd>
           <dt><strong>⬇️ Direct download link for Windows x64 ZIP:</strong></dt>
           <dd>
-            <a href={assetX64.browser_download_url}
-              >{assetX64.browser_download_url}</a
-            >
+            <a href={downloadUrlX64}>{downloadUrlX64}</a>
           </dd>
         </dl>
       </li>
@@ -148,9 +147,9 @@ if (!assetX64) throw new Error("Windows x64 asset not found!");
       <li>
         <strong>Restart OBS Studio:</strong><br />
         Once you have installed a new plugin into OBS Studio, you need to restart
-        OBS Studio for these changes to take effect. Open the effect filters list of
-        any video sources to check if there are Background Removal and Low-Light Enhancement
-        filters available.
+        OBS Studio for these changes to take effect. Open the effect filters list
+        of any video sources to check if there are Background Removal and Low-Light
+        Enhancement filters available.
       </li>
       <li>
         <strong

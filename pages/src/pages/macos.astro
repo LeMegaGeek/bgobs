@@ -30,7 +30,7 @@ async function getLatestRelease(): Promise<LatestRelease> {
 const release = await getLatestRelease();
 
 const asset = release.assets.find((e) => /macos-universal\.pkg/.test(e.name));
-if (!asset) throw new Error("macOS asset not found!");
+const downloadUrl = asset?.browser_download_url ?? release.html_url;
 ---
 
 <Layout lang="en" title="How to use OBS Background Removal on macOS">
@@ -61,13 +61,14 @@ if (!asset) throw new Error("macOS asset not found!");
     <ol>
       <li>
         <strong>Download the Plugin Installer:</strong><br />
-        <a href={asset.browser_download_url} download>
+        <a href={downloadUrl} download={asset !== undefined}>
           Click here to download the latest macOS installer (PKG)
         </a>
       </li>
       <li>
         <strong>Run the Installer:</strong><br />
-        Double-click <code>{asset.name}</code> and follow the instructions to install.
+        Double-click <code>{asset?.name ?? "the downloaded installer"}</code> and
+        follow the instructions to install.
       </li>
       <li>
         <strong>Restart OBS Studio:</strong><br />

@@ -14,6 +14,7 @@ This directory contains build, installation, and implementation notes for the pl
 ## Implementation Notes
 
 - [Background mask post-processing](MASK-POST-PROCESSING.md)
+- [CaCam USB protocol](CACAM-USB-PROTOCOL.md)
 
 ---
 

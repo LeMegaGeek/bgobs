@@ -14,11 +14,14 @@
 #include "../plugin-support.h"
 
 #include <mutex>
+#include <thread>
 
 extern "C" const char *PLUGIN_VERSION;
 
 static std::string latestVersionForUpdate;
 static std::mutex latestVersionMutex;
+static std::mutex updateThreadMutex;
+static std::thread updateThread;
 
 void check_update(void)
 {
@@ -53,14 +56,33 @@ void check_update(void)
 		latestVersionForUpdate = info.version;
 	};
 
-	github_utils_get_release_information(callback);
+	std::lock_guard<std::mutex> threadLock(updateThreadMutex);
+	if (updateThread.joinable()) {
+		updateThread.join();
+	}
+	updateThread = std::thread([callback] { github_utils_get_release_information(callback); });
+}
+
+void shutdown_update_checker(void)
+{
+	std::thread threadToJoin;
+	{
+		std::lock_guard<std::mutex> lock(updateThreadMutex);
+		if (updateThread.joinable())
+			threadToJoin = std::move(updateThread);
+	}
+	if (threadToJoin.joinable())
+		threadToJoin.join();
 }
 
 const char *get_latest_version(void)
 {
+	static thread_local std::string snapshot;
 	std::lock_guard<std::mutex> lock(latestVersionMutex);
 	if (latestVersionForUpdate.empty()) {
+		snapshot.clear();
 		return nullptr;
 	}
-	return latestVersionForUpdate.c_str();
+	snapshot = latestVersionForUpdate;
+	return snapshot.c_str();
 }

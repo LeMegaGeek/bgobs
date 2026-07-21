@@ -53,3 +53,23 @@ git commit -s -S
 ```
 
 Please refer to the [GitHub Document for commit signing](https://docs.github.com/authentication/managing-commit-signature-verification) for configuring commit signing.
+
+### 5. Local checks
+
+Run the portable checks before submitting a change:
+
+```sh
+cargo fmt --all --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cd pages
+npm ci
+npm test
+npm run build
+```
+
+Native builds should also run CTest. On Clang or GCC, configure a diagnostic
+build with `-DBGOBS_ENABLE_SANITIZERS=ON` to enable AddressSanitizer and
+UndefinedBehaviorSanitizer. Use a separate build with
+`-DBGOBS_ENABLE_THREAD_SANITIZER=ON` for ThreadSanitizer; the two modes are
+intentionally mutually exclusive.

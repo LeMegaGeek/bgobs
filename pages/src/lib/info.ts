@@ -10,4 +10,5 @@ export const PRODUCTION_BASE_URL = "https://lemegageek.github.io/bgobs";
 
 // Official YouTube Course URL owned by umireon (Kaito Udagawa, one of the maintainers)
 // YouTube Course is a special playlist for teaching
-export const PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL = "https://youtube.com/playlist?list=PLfd4SnaQQz_DVr_18OQozucYmiC56rRhy";
+export const PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL =
+  "https://youtube.com/playlist?list=PLfd4SnaQQz_DVr_18OQozucYmiC56rRhy";

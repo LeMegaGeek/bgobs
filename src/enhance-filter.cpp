@@ -19,6 +19,7 @@
 #include <fstream>
 #include <new>
 #include <mutex>
+#include <atomic>
 #include <regex>
 
 #include "plugin-support.h"
@@ -31,8 +32,11 @@
 
 struct enhance_filter : public filter_data, public std::enable_shared_from_this<enhance_filter> {
 	cv::Mat outputBGRA;
-	gs_effect_t *blendEffect;
-	float blendFactor;
+	gs_effect_t *blendEffect = nullptr;
+	gs_texture_t *outputTexture = nullptr;
+	uint32_t outputTextureWidth = 0;
+	uint32_t outputTextureHeight = 0;
+	std::atomic<float> blendFactor{0.0f};
 
 	std::mutex modelMutex;
 
@@ -217,6 +221,7 @@ void enhance_filter_destroy(void *data)
 				gs_stagesurface_destroy((*ptr)->stagesurface);
 			}
 			gs_effect_destroy((*ptr)->blendEffect);
+			gs_texture_destroy((*ptr)->outputTexture);
 			obs_leave_graphics();
 		}
 		// Delete the pointer to shared_ptr
@@ -247,15 +252,14 @@ void enhance_filter_video_tick(void *data, float seconds)
 		return;
 	}
 
-	if (tf->inputBGRA.empty()) {
-		return;
-	}
-
 	// Get input image from source rendering pipeline
 	cv::Mat imageBGRA;
 	{
 		std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
 		if (!lock.owns_lock()) {
+			return;
+		}
+		if (tf->inputBGRA.empty()) {
 			return;
 		}
 		imageBGRA = tf->inputBGRA.clone();
@@ -316,16 +320,29 @@ void enhance_filter_video_render(void *data, gs_effect_t *_effect)
 	}
 
 	// Get output from neural network into texture
-	gs_texture_t *outputTexture = nullptr;
 	{
 		std::lock_guard<std::mutex> lock(tf->outputLock);
-		outputTexture = gs_texture_create(tf->outputBGRA.cols, tf->outputBGRA.rows, GS_BGRA, 1,
-						  (const uint8_t **)&tf->outputBGRA.data, 0);
-		if (!outputTexture) {
+		if (tf->outputBGRA.empty()) {
+			obs_source_skip_video_filter(tf->source);
+			return;
+		}
+		const uint32_t outputWidth = static_cast<uint32_t>(tf->outputBGRA.cols);
+		const uint32_t outputHeight = static_cast<uint32_t>(tf->outputBGRA.rows);
+		if (!tf->outputTexture || tf->outputTextureWidth != outputWidth ||
+		    tf->outputTextureHeight != outputHeight) {
+			gs_texture_destroy(tf->outputTexture);
+			tf->outputTexture =
+				gs_texture_create(outputWidth, outputHeight, GS_BGRA, 1, nullptr, GS_DYNAMIC);
+			tf->outputTextureWidth = outputWidth;
+			tf->outputTextureHeight = outputHeight;
+		}
+		if (!tf->outputTexture) {
 			obs_log(LOG_ERROR, "Failed to create output texture");
 			obs_source_skip_video_filter(tf->source);
 			return;
 		}
+		gs_texture_set_image(tf->outputTexture, tf->outputBGRA.data,
+				     static_cast<uint32_t>(tf->outputBGRA.step[0]), false);
 	}
 
 	gs_eparam_t *blendimage = gs_effect_get_param_by_name(tf->blendEffect, "blendimage");
@@ -333,8 +350,8 @@ void enhance_filter_video_render(void *data, gs_effect_t *_effect)
 	gs_eparam_t *xOffset = gs_effect_get_param_by_name(tf->blendEffect, "xOffset");
 	gs_eparam_t *yOffset = gs_effect_get_param_by_name(tf->blendEffect, "yOffset");
 
-	gs_effect_set_texture(blendimage, outputTexture);
-	gs_effect_set_float(blendFactor, tf->blendFactor);
+	gs_effect_set_texture(blendimage, tf->outputTexture);
+	gs_effect_set_float(blendFactor, tf->blendFactor.load());
 	gs_effect_set_float(xOffset, 1.0f / float(width));
 	gs_effect_set_float(yOffset, 1.0f / float(height));
 
@@ -346,5 +363,4 @@ void enhance_filter_video_render(void *data, gs_effect_t *_effect)
 
 	gs_blend_state_pop();
 
-	gs_texture_destroy(outputTexture);
 }

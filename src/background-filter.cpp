@@ -20,6 +20,7 @@
 #include <fstream>
 #include <new>
 #include <mutex>
+#include <atomic>
 #include <regex>
 #include <thread>
 
@@ -40,34 +41,40 @@
 
 struct bgobs_background_filter : public filter_data, public std::enable_shared_from_this<bgobs_background_filter> {
 	std::string beautyPreset;
-	bool enableThreshold = true;
-	bool stopWhenSourceIsInactive = true;
-	float threshold = 0.5f;
+	std::atomic<bool> enableThreshold{true};
+	std::atomic<bool> stopWhenSourceIsInactive{true};
+	std::atomic<float> threshold{0.5f};
 	cv::Scalar backgroundColor{0, 0, 0, 0};
-	float edgeSoftness = 0.05f;
-	float edgeRefinement = 0.25f;
-	float foregroundCleanup = 0.15f;
-	float contourFilter = 0.05f;
-	float smoothContour = 0.5f;
-	float feather = 0.0f;
-	int maskExpansion = 0;
-	bool showMaskPreview = false;
+	std::atomic<float> edgeSoftness{0.05f};
+	std::atomic<float> edgeRefinement{0.25f};
+	std::atomic<float> foregroundCleanup{0.15f};
+	std::atomic<float> contourFilter{0.05f};
+	std::atomic<float> smoothContour{0.5f};
+	std::atomic<float> feather{0.0f};
+	std::atomic<int> maskExpansion{0};
+	std::atomic<bool> showMaskPreview{false};
 
 	cv::Mat backgroundMask;
 	cv::Mat lastBackgroundMask;
 	cv::Mat lastImageBGRA;
-	float temporalSmoothFactor = 0.0f;
-	float imageSimilarityThreshold = 35.0f;
-	bool enableImageSimilarity = true;
-	int maskEveryXFrames = 1;
+	std::atomic<float> temporalSmoothFactor{0.0f};
+	std::atomic<float> imageSimilarityThreshold{35.0f};
+	std::atomic<bool> enableImageSimilarity{true};
+	std::atomic<int> maskEveryXFrames{1};
 	int maskEveryXFramesCount = 0;
-	int64_t blurBackground = 0;
-	bool enableFocalBlur = false;
-	float blurFocusPoint = 0.1f;
-	float blurFocusDepth = 0.1f;
+	std::atomic<int64_t> blurBackground{0};
+	std::atomic<bool> enableFocalBlur{false};
+	std::atomic<float> blurFocusPoint{0.1f};
+	std::atomic<float> blurFocusDepth{0.1f};
 
-	gs_effect_t *effect;
-	gs_effect_t *kawaseBlurEffect;
+	gs_effect_t *effect = nullptr;
+	gs_effect_t *kawaseBlurEffect = nullptr;
+	gs_texture_t *alphaTexture = nullptr;
+	uint32_t alphaTextureWidth = 0;
+	uint32_t alphaTextureHeight = 0;
+	gs_texture_t *blurTexture = nullptr;
+	uint32_t blurTextureWidth = 0;
+	uint32_t blurTextureHeight = 0;
 
 	std::mutex modelMutex;
 
@@ -475,7 +482,6 @@ void background_filter_update(void *data, obs_data_t *settings)
 	tf->feather = (float)obs_data_get_double(settings, "feather");
 	tf->showMaskPreview = obs_data_get_bool(settings, "show_mask_preview");
 	tf->maskEveryXFrames = std::max(1, (int)obs_data_get_int(settings, "mask_every_x_frames"));
-	tf->maskEveryXFramesCount = (int)(0);
 	tf->blurBackground = obs_data_get_int(settings, "blur_background");
 	tf->enableFocalBlur = (float)obs_data_get_bool(settings, "enable_focal_blur");
 	tf->blurFocusPoint = (float)obs_data_get_double(settings, "blur_focus_point");
@@ -552,23 +558,23 @@ void background_filter_update(void *data, obs_data_t *settings)
 	obs_log(LOG_INFO, "  Model: %s", tf->modelSelection.c_str());
 	obs_log(LOG_INFO, "  Inference Device: %s", tf->useGPU.c_str());
 	obs_log(LOG_INFO, "  Num Threads: %d", tf->numThreads);
-	obs_log(LOG_INFO, "  Enable Threshold: %s", tf->enableThreshold ? "true" : "false");
-	obs_log(LOG_INFO, "  Threshold: %f", tf->threshold);
-	obs_log(LOG_INFO, "  Edge Softness: %f", tf->edgeSoftness);
-	obs_log(LOG_INFO, "  Edge Refinement: %f", tf->edgeRefinement);
-	obs_log(LOG_INFO, "  Foreground Cleanup: %f", tf->foregroundCleanup);
-	obs_log(LOG_INFO, "  Contour Filter: %f", tf->contourFilter);
-	obs_log(LOG_INFO, "  Smooth Contour: %f", tf->smoothContour);
-	obs_log(LOG_INFO, "  Mask Expansion: %d", tf->maskExpansion);
-	obs_log(LOG_INFO, "  Feather: %f", tf->feather);
-	obs_log(LOG_INFO, "  Mask Preview: %s", tf->showMaskPreview ? "true" : "false");
-	obs_log(LOG_INFO, "  Mask Every X Frames: %d", tf->maskEveryXFrames);
-	obs_log(LOG_INFO, "  Enable Image Similarity: %s", tf->enableImageSimilarity ? "true" : "false");
-	obs_log(LOG_INFO, "  Image Similarity Threshold: %f", tf->imageSimilarityThreshold);
-	obs_log(LOG_INFO, "  Blur Background: %d", tf->blurBackground);
-	obs_log(LOG_INFO, "  Enable Focal Blur: %s", tf->enableFocalBlur ? "true" : "false");
-	obs_log(LOG_INFO, "  Blur Focus Point: %f", tf->blurFocusPoint);
-	obs_log(LOG_INFO, "  Blur Focus Depth: %f", tf->blurFocusDepth);
+	obs_log(LOG_INFO, "  Enable Threshold: %s", tf->enableThreshold.load() ? "true" : "false");
+	obs_log(LOG_INFO, "  Threshold: %f", tf->threshold.load());
+	obs_log(LOG_INFO, "  Edge Softness: %f", tf->edgeSoftness.load());
+	obs_log(LOG_INFO, "  Edge Refinement: %f", tf->edgeRefinement.load());
+	obs_log(LOG_INFO, "  Foreground Cleanup: %f", tf->foregroundCleanup.load());
+	obs_log(LOG_INFO, "  Contour Filter: %f", tf->contourFilter.load());
+	obs_log(LOG_INFO, "  Smooth Contour: %f", tf->smoothContour.load());
+	obs_log(LOG_INFO, "  Mask Expansion: %d", tf->maskExpansion.load());
+	obs_log(LOG_INFO, "  Feather: %f", tf->feather.load());
+	obs_log(LOG_INFO, "  Mask Preview: %s", tf->showMaskPreview.load() ? "true" : "false");
+	obs_log(LOG_INFO, "  Mask Every X Frames: %d", tf->maskEveryXFrames.load());
+	obs_log(LOG_INFO, "  Enable Image Similarity: %s", tf->enableImageSimilarity.load() ? "true" : "false");
+	obs_log(LOG_INFO, "  Image Similarity Threshold: %f", tf->imageSimilarityThreshold.load());
+	obs_log(LOG_INFO, "  Blur Background: %lld", static_cast<long long>(tf->blurBackground.load()));
+	obs_log(LOG_INFO, "  Enable Focal Blur: %s", tf->enableFocalBlur.load() ? "true" : "false");
+	obs_log(LOG_INFO, "  Blur Focus Point: %f", tf->blurFocusPoint.load());
+	obs_log(LOG_INFO, "  Blur Focus Depth: %f", tf->blurFocusDepth.load());
 	obs_log(LOG_INFO, "  Disabled: %s", tf->isDisabled ? "true" : "false");
 #ifdef _WIN32
 	obs_log(LOG_INFO, "  Model file path: %S", tf->modelFilepath.c_str());
@@ -657,6 +663,8 @@ void background_filter_destroy(void *data)
 			}
 			gs_effect_destroy((*ptr)->effect);
 			gs_effect_destroy((*ptr)->kawaseBlurEffect);
+			gs_texture_destroy((*ptr)->alphaTexture);
+			gs_texture_destroy((*ptr)->blurTexture);
 			obs_leave_graphics();
 		}
 		// Delete the pointer to shared_ptr
@@ -709,11 +717,6 @@ void background_filter_video_tick(void *data, float seconds)
 		return;
 	}
 
-	if (!tf->model) {
-		obs_log(LOG_ERROR, "Model is not initialized");
-		return;
-	}
-
 	cv::Mat imageBGRA;
 	{
 		std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
@@ -741,16 +744,19 @@ void background_filter_video_tick(void *data, float seconds)
 		tf->lastImageBGRA = imageBGRA.clone();
 	}
 
-	if (tf->backgroundMask.empty()) {
-		// First frame. Initialize the background mask.
-		tf->backgroundMask = cv::Mat(imageBGRA.size(), CV_8UC1, cv::Scalar(255));
+	{
+		std::lock_guard<std::mutex> lock(tf->outputLock);
+		if (tf->backgroundMask.empty()) {
+			// First frame. Initialize the background mask.
+			tf->backgroundMask = cv::Mat(imageBGRA.size(), CV_8UC1, cv::Scalar(255));
+		}
 	}
 
 	tf->maskEveryXFramesCount++;
-	tf->maskEveryXFramesCount %= tf->maskEveryXFrames;
+	tf->maskEveryXFramesCount %= tf->maskEveryXFrames.load();
 
 	try {
-		if (tf->maskEveryXFramesCount != 0 && !tf->backgroundMask.empty()) {
+		if (tf->maskEveryXFramesCount != 0) {
 			// We are skipping processing of the mask for this frame.
 			// Get the background mask previously generated.
 			; // Do nothing
@@ -759,6 +765,10 @@ void background_filter_video_tick(void *data, float seconds)
 
 			{
 				std::unique_lock<std::mutex> lock(tf->modelMutex);
+				if (!tf->model) {
+					obs_log(LOG_ERROR, "Model is not initialized");
+					return;
+				}
 				if (!runFilterModelInference(tf.get(), imageBGRA, outputImage)) {
 					return;
 				}
@@ -790,7 +800,15 @@ void background_filter_video_tick(void *data, float seconds)
 		}
 	} catch (const Ort::Exception &e) {
 		obs_log(LOG_ERROR, "ONNXRuntime Exception: %s", e.what());
-		// TODO: Fall back to CPU if it makes sense
+		std::unique_lock<std::mutex> lock(tf->modelMutex);
+		if (tf->useGPU != USEGPU_CPU) {
+			obs_log(LOG_WARNING, "GPU inference failed; retrying subsequent frames on CPU");
+			tf->useGPU = USEGPU_CPU;
+			if (createOrtSession(tf.get()) != OBS_BGREMOVAL_ORT_SESSION_SUCCESS) {
+				obs_log(LOG_ERROR, "Failed to create CPU fallback session; disabling filter");
+				tf->isDisabled = true;
+			}
+		}
 	} catch (const std::exception &e) {
 		obs_log(LOG_ERROR, "%s", e.what());
 	}
@@ -802,8 +820,15 @@ static gs_texture_t *blur_background(std::shared_ptr<bgobs_background_filter> tf
 	if (tf->blurBackground == 0 || !tf->kawaseBlurEffect) {
 		return nullptr;
 	}
-	gs_texture_t *blurredTexture = gs_texture_create(width, height, GS_BGRA, 1, nullptr, 0);
-	gs_copy_texture(blurredTexture, gs_texrender_get_texture(tf->texrender));
+	if (!tf->blurTexture || tf->blurTextureWidth != width || tf->blurTextureHeight != height) {
+		gs_texture_destroy(tf->blurTexture);
+		tf->blurTexture = gs_texture_create(width, height, GS_BGRA, 1, nullptr, 0);
+		tf->blurTextureWidth = width;
+		tf->blurTextureHeight = height;
+	}
+	if (!tf->blurTexture)
+		return nullptr;
+	gs_copy_texture(tf->blurTexture, gs_texrender_get_texture(tf->texrender));
 	gs_eparam_t *image = gs_effect_get_param_by_name(tf->kawaseBlurEffect, "image");
 	gs_eparam_t *focalmask = gs_effect_get_param_by_name(tf->kawaseBlurEffect, "focalmask");
 	gs_eparam_t *xOffset = gs_effect_get_param_by_name(tf->kawaseBlurEffect, "xOffset");
@@ -817,10 +842,10 @@ static gs_texture_t *blur_background(std::shared_ptr<bgobs_background_filter> tf
 		gs_texrender_reset(tf->texrender);
 		if (!gs_texrender_begin(tf->texrender, width, height)) {
 			obs_log(LOG_INFO, "Could not open background blur texrender!");
-			return blurredTexture;
+			return tf->blurTexture;
 		}
 
-		gs_effect_set_texture(image, blurredTexture);
+		gs_effect_set_texture(image, tf->blurTexture);
 		gs_effect_set_texture(focalmask, alphaTexture);
 		gs_effect_set_float(xOffset, ((float)i + 0.5f) / (float)width);
 		gs_effect_set_float(yOffset, ((float)i + 0.5f) / (float)height);
@@ -839,13 +864,13 @@ static gs_texture_t *blur_background(std::shared_ptr<bgobs_background_filter> tf
 		const char *blur_type = (tf->enableFocalBlur) ? "DrawFocalBlur" : "Draw";
 
 		while (gs_effect_loop(tf->kawaseBlurEffect, blur_type)) {
-			gs_draw_sprite(blurredTexture, 0, width, height);
+			gs_draw_sprite(tf->blurTexture, 0, width, height);
 		}
 		gs_blend_state_pop();
 		gs_texrender_end(tf->texrender);
-		gs_copy_texture(blurredTexture, gs_texrender_get_texture(tf->texrender));
+		gs_copy_texture(tf->blurTexture, gs_texrender_get_texture(tf->texrender));
 	}
-	return blurredTexture;
+	return tf->blurTexture;
 }
 
 void background_filter_video_render(void *data, gs_effect_t *_effect)
@@ -884,7 +909,6 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 		return;
 	}
 
-	gs_texture_t *alphaTexture = nullptr;
 	{
 		std::lock_guard<std::mutex> lock(tf->outputLock);
 
@@ -896,34 +920,41 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 			return;
 		}
 
-		alphaTexture = gs_texture_create(tf->backgroundMask.cols, tf->backgroundMask.rows, GS_R8, 1,
-						 (const uint8_t **)&tf->backgroundMask.data, 0);
+		const uint32_t maskWidth = static_cast<uint32_t>(tf->backgroundMask.cols);
+		const uint32_t maskHeight = static_cast<uint32_t>(tf->backgroundMask.rows);
+		if (!tf->alphaTexture || tf->alphaTextureWidth != maskWidth || tf->alphaTextureHeight != maskHeight) {
+			gs_texture_destroy(tf->alphaTexture);
+			tf->alphaTexture = gs_texture_create(maskWidth, maskHeight, GS_R8, 1, nullptr, GS_DYNAMIC);
+			tf->alphaTextureWidth = maskWidth;
+			tf->alphaTextureHeight = maskHeight;
+		}
 
-		if (!alphaTexture) {
+		if (!tf->alphaTexture) {
 			obs_log(LOG_ERROR, "Failed to create alpha texture");
 			if (tf->source) {
 				obs_source_skip_video_filter(tf->source);
 			}
 			return;
 		}
+		gs_texture_set_image(tf->alphaTexture, tf->backgroundMask.data,
+				     static_cast<uint32_t>(tf->backgroundMask.step[0]), false);
 	}
 
 	// Output the masked image. Mask preview is a diagnostic path and should not spend time rendering blur passes.
-	gs_texture_t *blurredTexture = tf->showMaskPreview ? nullptr : blur_background(tf, width, height, alphaTexture);
+	gs_texture_t *blurredTexture =
+		tf->showMaskPreview ? nullptr : blur_background(tf, width, height, tf->alphaTexture);
 
 	if (!obs_source_process_filter_begin(tf->source, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
 		if (tf->source) {
 			obs_source_skip_video_filter(tf->source);
 		}
-		gs_texture_destroy(alphaTexture);
-		gs_texture_destroy(blurredTexture);
 		return;
 	}
 
 	gs_eparam_t *alphamask = gs_effect_get_param_by_name(tf->effect, "alphamask");
 	gs_eparam_t *blurredBackground = gs_effect_get_param_by_name(tf->effect, "blurredBackground");
 
-	gs_effect_set_texture(alphamask, alphaTexture);
+	gs_effect_set_texture(alphamask, tf->alphaTexture);
 
 	if (tf->blurBackground > 0) {
 		gs_effect_set_texture(blurredBackground, blurredTexture);
@@ -948,6 +979,4 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 
 	gs_blend_state_pop();
 
-	gs_texture_destroy(alphaTexture);
-	gs_texture_destroy(blurredTexture);
 }

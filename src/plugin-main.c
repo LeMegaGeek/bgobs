@@ -63,5 +63,6 @@ bool obs_module_load(void)
 
 void obs_module_unload()
 {
+	shutdown_update_checker();
 	obs_log(LOG_INFO, "plugin unloaded");
 }
