@@ -19,6 +19,18 @@ modifier les routes reseau du PC.
 
 L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
 
+## Version 0.3.8
+
+- Ajoute une option **logs de debug BGOBS** dans les propriétés de la source
+  **CaCam USB** pour enrichir le journal OBS pendant les tests USB.
+
+## Version 0.3.7
+
+- Affiche la version BGOBS directement dans les propriétés de la source
+  **CaCam USB** pour vérifier rapidement le paquet chargé par OBS.
+- Ajoute un rappel de diagnostic dans cette même fenêtre lorsque l’image USB
+  reste noire sous OBS portable Windows.
+
 ## Version 0.3.6
 
 - Distingue l'ouverture de l'interface USB de la connexion effective avec
