@@ -1,0 +1,17 @@
+BGOBS
+Current BGOBS changes are Copyright (C) 2026 LeMegaGeek and contributors.
+
+BGOBS is derived from OBS Background Removal, with copyright held by Roy
+Shilkrot, Kaito Udagawa, and its contributors. Copyright and license notices in
+individual files and in the Git history must be preserved.
+
+The BGOBS source is licensed under GPL-3.0-or-later except where a file states a
+different license. Embedded models, generated assets, build tooling, and
+third-party libraries retain their own licenses. See THIRD_PARTY_NOTICES.md,
+the adjacent .license files, REUSE.toml, and LICENSES/ for details.
+
+CaCam is a separate, privately developed Android application. It is not part of
+the BGOBS source distribution and is not covered by the BGOBS license.
+
+SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
+SPDX-License-Identifier: GPL-3.0-or-later

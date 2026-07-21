@@ -1,134 +1,153 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { joinURL, withTrailingSlash } from "ufo";
 
-import { Image } from "astro:assets";
-
 import Layout from "../layouts/Layout.astro";
-
-import { PRODUCTION_BASE_URL } from "../lib/info.js";
-
-import addAVideoCaptureSource from "../assets/addAVideoCaptureSource.png";
-import addBackgroundRemoval from "../assets/addBackgroundRemoval.png";
-import captureFilters from "../assets/captureFilters.png";
-import filterSettings from "../assets/filterSettings.png";
-import filterSettingsAdvanced from "../assets/filterSettingsAdvanced.png";
+import { GITHUB_URL, PRODUCTION_BASE_URL } from "../lib/info.js";
 
 const { BASE_URL } = import.meta.env;
 ---
 
-<Layout lang="en" title="How to use OBS Background Removal">
-  <Fragment slot="head-info">
-    <meta name="description" content="How to use OBS Background Removal" />
-    <link
-      rel="canonical"
-      href={withTrailingSlash(joinURL(PRODUCTION_BASE_URL, "usage"))}
-    />
-  </Fragment>
-
-  <main class="white-box">
-    <h1>How to Use OBS Background Removal</h1>
-
-    <ol>
-      <li>
-        <strong>Start OBS Studio.</strong>
-      </li>
-      <li>
-        <strong>Add a Source:</strong><br />
-        Add a video capture source (such as your webcam), or any source that provides
-        an image (Video, Image, Media, Browser, Screen Capture, etc.).
-        <p>
-          <Image
-            src={addAVideoCaptureSource}
-            alt="Add a Video Capture Source"
-            width="400"
-          />
-        </p>
-      </li>
-      <li>
-        <strong>Open Filters:</strong><br />
-        Right-click your source and select <em>Filters</em>.
-        <p>
-          <Image src={captureFilters} alt="Capture Filters" width="400" />
-        </p>
-      </li>
-      <li>
-        <strong>Add the Background Removal Filter:</strong><br />
-        Under <em>Effect Filters</em>, click the <em>+</em> button and select <strong
-          >Background Removal</strong
-        >.
-        <p>
-          <Image
-            src={addBackgroundRemoval}
-            alt="Add Background Removal"
-            width="400"
-          />
-        </p>
-        <em
-          >If you don't see the filter, the installation may have failed or your
-          OBS version may not be compatible.</em
-        >
-      </li>
-      <li>
-        <strong>Adjust Filter Settings:</strong><br />
-        Tweak the filter settings to get the best result.
-        <p>
-          <Image src={filterSettings} alt="Filter Settings" width="400" />
-        </p>
-        <p>
-          For advanced options, click <em>Show Advanced Settings</em>:
-          <Image
-            src={filterSettingsAdvanced}
-            alt="Filter Settings Advanced"
-            width="400"
-          />
-        </p>
-      </li>
-    </ol>
-
-    <h2>Tips for Best Results</h2>
-    <ul>
-      <li>Use a good camera and ensure your lighting is bright and even.</li>
-      <li>
-        <strong>Mediapipe model:</strong> Fastest, but lower accuracy. Set the threshold
-        low (e.g., <code>0.05</code>) to capture your whole portrait.
-      </li>
-      <li>
-        <strong>Robust Video Matting (RVM) model:</strong> Highest accuracy and least
-        flickering, but slower.
-      </li>
-      <li>
-        <strong>TCMonoDepth:</strong> Depth estimation model for portrait segmentation
-        or "Depth of Field" blur. See the <a
-          href="https://youtu.be/jC3EKSpNjQk"
-          target="_blank"
-          rel="noopener">tutorial/preview</a
-        >.
-      </li>
-      <li>
-        <strong>RMBG model:</strong> General background removal for any object, not
-        just humans. See the <a
-          href="https://youtu.be/N74VCDCToX8"
-          target="_blank"
-          rel="noopener">tutorial/preview</a
-        >.
-      </li>
-    </ul>
-
-    <p>
-      Watch our tutorial video <a
-        href="https://youtu.be/veqNEsMqEE0"
-        target="_blank"
-        rel="noopener">here</a
-      >.
+<Layout
+  lang="en"
+  title="Use BGOBS in OBS Studio"
+  description="Configure BGOBS background removal, blur and low-light enhancement filters, or add an optional CaCam USB or ADB source in OBS Studio."
+  canonical={joinURL(PRODUCTION_BASE_URL, "usage")}
+>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">Usage guide</p>
+    <h1>Use BGOBS in OBS Studio</h1>
+    <p class="lede">
+      BGOBS provides an effect filter for any compatible video source and a
+      separate, optional CaCam source. Start with the filter unless you
+      specifically need a phone feed.
     </p>
 
-    <p>All set!</p>
+    <nav class="page-nav" aria-label="On this page">
+      <a href="#filter">Background &amp; low-light filter</a>
+      <a href="#cacam">Optional CaCam source</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+    </nav>
 
-    <p><a href={joinURL(BASE_URL, "/")}>Back to the top page</a></p>
+    <section id="filter">
+      <p class="eyebrow">Effect filter</p>
+      <h2>Remove, replace, or blur a background</h2>
+      <ol>
+        <li>
+          In OBS Studio, add or select the video source you want to process.
+        </li>
+        <li>
+          Right-click the source, choose <strong>Filters</strong>, then add an
+          effect filter named <strong>Make me look good</strong>.
+        </li>
+        <li>
+          Choose a <strong>BGOBS style</strong> preset as a starting point. Use
+          <strong>Custom</strong> only when you want to tune individual controls.
+        </li>
+        <li>
+          Select a segmentation model and adjust the threshold, contour,
+          feathering, and mask expansion while watching the preview.
+        </li>
+        <li>
+          Set <strong>Blur background</strong> above zero for blur, or leave it at
+          zero and choose a background color for removal/replacement.
+        </li>
+      </ol>
+
+      <h3>Improve a dim portrait</h3>
+      <p>
+        Enable <strong>Enhance portrait</strong>, then raise
+        <strong>Effect strength</strong> gradually. Enhancement requires extra processing,
+        so compare OBS rendering time before and after enabling it.
+      </p>
+
+      <div class="callout info">
+        <p>
+          <strong>Practical starting point:</strong> use even front lighting, keep
+          clear contrast between the subject and background, and start with a preset
+          before opening advanced settings. The best model depends on the camera,
+          scene, and available CPU or GPU.
+        </p>
+      </div>
+    </section>
+
+    <section id="cacam">
+      <p class="eyebrow">Optional source</p>
+      <h2>Bring in a CaCam phone feed</h2>
+      <p>
+        CaCam is a separate, private Android application. It is not required for
+        BGOBS filters and its source code is not part of this repository.
+      </p>
+      <ol>
+        <li>
+          In OBS Studio, add a source named <strong>CaCam</strong>.
+        </li>
+        <li>
+          Choose <strong>USB</strong> for a direct accessory connection or
+          <strong>ADB</strong> for a local Android Debug Bridge connection.
+        </li>
+        <li>
+          Select the requested quality and enable automatic connection only if
+          you want the source to reconnect when the phone becomes available.
+        </li>
+        <li>
+          Open CaCam on the phone and select its BGOBS connection mode. Accept
+          Android's USB permission prompt when using direct USB.
+        </li>
+      </ol>
+
+      <h3>USB mode</h3>
+      <p>
+        Connect the phone directly to the computer and avoid hubs while
+        diagnosing a connection problem. Only one application can own the
+        accessory connection at a time.
+      </p>
+
+      <h3>ADB mode</h3>
+      <p>
+        BGOBS needs a working <code>adb</code> executable. The Windows package may
+        bundle it; on other systems, set <strong>ADB path</strong> if it is not available
+        on <code>PATH</code>. Use <strong>ADB serial</strong> when more than one Android
+        device is connected. Keep the default local and device ports unless they conflict
+        with another service.
+      </p>
+    </section>
+
+    <section id="troubleshooting">
+      <p class="eyebrow">Support</p>
+      <h2>When something does not appear</h2>
+      <ul>
+        <li>Restart OBS Studio after installing or replacing the plugin.</li>
+        <li>
+          Confirm that the package architecture matches OBS Studio and that the
+          plugin came from the official BGOBS release.
+        </li>
+        <li>
+          Check the OBS log for lines containing <code>BGOBS</code> or
+          <code>CaCam</code>. Remove usernames, device serials, and private
+          paths before sharing a log.
+        </li>
+        <li>
+          Include the BGOBS version, OBS version, operating system,
+          architecture, and connection mode in a bug report.
+        </li>
+      </ul>
+      <div class="button-row">
+        <a class="button" href={joinURL(BASE_URL, "support/")}
+          >Support &amp; security guidance</a
+        >
+        <a class="button" href={GITHUB_URL + "/issues"}>Open GitHub Issues</a>
+      </div>
+    </section>
+
+    <nav class="page-nav" aria-label="Page navigation">
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+      <a href={joinURL(BASE_URL, "windows/")}>Installation guides</a>
+    </nav>
   </main>
 </Layout>

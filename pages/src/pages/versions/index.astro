@@ -1,147 +1,120 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { joinURL, withTrailingSlash } from "ufo";
-import { Octokit, type RestEndpointMethodTypes } from "@octokit/rest";
 
-import {
-  GITHUB_OWNER,
-  GITHUB_REPO,
-  GITHUB_URL,
-  PRODUCTION_BASE_URL,
-} from "../../lib/info.js";
 import DefineLocalDate from "../../components/DefineLocalDate.astro";
 import Layout from "../../layouts/Layout.astro";
-
-export type Releases =
-  RestEndpointMethodTypes["repos"]["listReleases"]["response"]["data"];
+import { GITHUB_URL, PRODUCTION_BASE_URL } from "../../lib/info.js";
+import { listBgobsReleases } from "../../lib/releases.js";
 
 const { BASE_URL } = import.meta.env;
+const releases = await listBgobsReleases();
+const [latestRelease, ...pastReleases] = releases;
 
-async function listReleases(): Promise<Releases> {
-  const octokit = new Octokit({ auth: import.meta.env.GITHUB_TOKEN });
-
-  const allReleases = await octokit.paginate(octokit.rest.repos.listReleases, {
-    owner: GITHUB_OWNER,
-    repo: GITHUB_REPO,
-    per_page: 100,
-  });
-
-  return allReleases;
+if (!latestRelease) {
+  throw new Error("No published BGOBS release with official assets found.");
 }
-
-const releases = (await listReleases()).filter(
-  (r) => !r.draft && r.published_at,
-);
-
-if (releases.length === 0) {
-  throw new Error("No releases found.");
-}
-
-const latestRelease = releases[0];
-const pastReleases = releases.slice(1);
 ---
 
-<Layout lang="en" title="Version History - OBS Background Removal">
-  <Fragment slot="head-info">
-    <meta
-      name="description"
-      content="Official release archive for OBS Background Removal. Access all past versions, release notes, and download links in one place."
-    />
-    <link
-      rel="canonical"
-      href={withTrailingSlash(joinURL(PRODUCTION_BASE_URL, "versions"))}
-    />
-  </Fragment>
-
+<Layout
+  lang="en"
+  title="BGOBS release archive"
+  description="Browse official BGOBS releases, platform downloads, release notes, checksums, and local file-verification tools."
+  canonical={joinURL(PRODUCTION_BASE_URL, "versions")}
+>
   <Fragment slot="head-bottom">
     <DefineLocalDate />
   </Fragment>
 
-  <main class="white-box">
-    <hgroup>
-      <h1>Version History</h1>
-      <h2>OBS Background Removal</h2>
-    </hgroup>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">Official release archive</p>
+    <h1>BGOBS versions</h1>
+    <p class="lede">
+      This archive includes only releases carrying BGOBS-branded assets from the
+      official LeMegaGeek repository.
+    </p>
 
-    <h2>Latest Release</h2>
-    <p id="latest-release">
-      <a
-        href={withTrailingSlash(
-          joinURL(BASE_URL, "versions", latestRelease.tag_name),
-        )}
-        ><strong>{latestRelease.tag_name}</strong>
-        {
-          [
-            "(",
+    <section class="card accent-card" aria-labelledby="latest-title">
+      <span class="badge latest">Latest</span>
+      <h2 id="latest-title">{latestRelease.tag_name}</h2>
+      {
+        latestRelease.published_at && (
+          <p>
+            Published{" "}
             <local-date data-date={latestRelease.published_at}>
               <time datetime={latestRelease.published_at}>
                 {latestRelease.published_at}
               </time>
-            </local-date>,
-            ")",
-          ]
-        }
+            </local-date>
+          </p>
+        )
+      }
+      <a
+        class="button primary"
+        href={withTrailingSlash(
+          joinURL(BASE_URL, "versions", latestRelease.tag_name),
+        )}
+      >
+        Downloads and release notes
       </a>
-    </p>
+    </section>
 
-    <nav class="page-nav" aria-label="Page navigation">
-      <ul>
-        <li>
-          <a href={withTrailingSlash(BASE_URL)}>Back to Top</a>
-        </li>
-        <li>
-          <a
-            href={withTrailingSlash(GITHUB_URL)}
-            target="_blank"
-            rel="noopener noreferrer">GitHub Repository</a
-          >
-        </li>
-      </ul>
-    </nav>
-
-    <hr />
-
-    <h2>Past Versions</h2>
-    <ul>
-      {
-        pastReleases.map((release) => (
-          <li>
-            <a
-              href={withTrailingSlash(
-                joinURL(BASE_URL, "versions", release.tag_name),
-              )}
-            >
-              {release.tag_name}
-              {[
-                "(",
+    <h2>Earlier BGOBS releases</h2>
+    {
+      pastReleases.length > 0 ? (
+        <ol class="release-list" reversed>
+          {pastReleases.map((release) => (
+            <li>
+              <a
+                href={withTrailingSlash(
+                  joinURL(BASE_URL, "versions", release.tag_name),
+                )}
+              >
+                <strong>{release.tag_name}</strong>
+              </a>
+              {release.published_at && (
                 <local-date data-date={release.published_at}>
                   <time datetime={release.published_at}>
                     {release.published_at}
                   </time>
-                </local-date>,
-                ")",
-              ]}
-            </a>
-          </li>
-        ))
-      }
-    </ul>
+                </local-date>
+              )}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p>No earlier BGOBS-branded release is available.</p>
+      )
+    }
+
+    <nav class="page-nav" aria-label="Page navigation">
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+      <a href={GITHUB_URL + "/releases"}>GitHub Releases</a>
+    </nav>
   </main>
 </Layout>
 
-<style is:global>
-  main {
-    ul {
-      max-width: 600px;
-    }
+<style>
+  .release-list {
+    padding: 0;
+    list-style: none;
+  }
 
-    #latest-release {
-      font-size: 1.25rem;
-      margin-left: 2rem;
-    }
+  .release-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0.8rem 0;
+    border-bottom: 1px solid var(--line);
+    gap: 1rem;
+  }
+
+  .release-list local-date {
+    color: var(--muted);
   }
 </style>

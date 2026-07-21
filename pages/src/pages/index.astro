@@ -1,139 +1,157 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { joinURL, withTrailingSlash } from "ufo";
-import { Octokit, type RestEndpointMethodTypes } from "@octokit/rest";
-
-import { Image } from "astro:assets";
+import { joinURL } from "ufo";
 
 import DefineLocalDate from "../components/DefineLocalDate.astro";
-
-import {
-  GITHUB_OWNER,
-  GITHUB_REPO,
-  PRODUCTION_BASE_URL,
-  PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL,
-} from "../lib/info.js";
-
 import Layout from "../layouts/Layout.astro";
-
-import demo from "../assets/demo.gif";
-import icon from "../assets/obs-backgroundremoval-icon.jpg";
-import GitHubMarkWhite from "../../public/github-mark-white.svg";
-
-export type LatestRelease =
-  RestEndpointMethodTypes["repos"]["getLatestRelease"]["response"]["data"];
+import { GITHUB_URL, LICENSE_URL, PRODUCTION_BASE_URL } from "../lib/info.js";
+import {
+  ASSET_PATTERNS,
+  findAsset,
+  getLatestBgobsRelease,
+} from "../lib/releases.js";
 
 const { BASE_URL } = import.meta.env;
-
-async function getLatestRelease(): Promise<LatestRelease> {
-  const octokit = new Octokit({ auth: import.meta.env.GITHUB_TOKEN });
-
-  const latestRelease = await octokit.rest.repos.getLatestRelease({
-    owner: GITHUB_OWNER,
-    repo: GITHUB_REPO,
-  });
-
-  return latestRelease.data;
-}
-
-const release = await getLatestRelease();
+const release = await getLatestBgobsRelease();
+const windowsAsset = findAsset(release, ASSET_PATTERNS.windows);
+const macosAsset = findAsset(release, ASSET_PATTERNS.macos);
+const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
 ---
 
-<Layout lang="en" title="OBS Background Removal">
-  <Fragment slot="head-info">
-    <meta
-      name="description"
-      content="OBS Plugin: Background Removal / Virtual Green-screen and Low-Light Enhancement"
-    />
-    <link rel="canonical" href={withTrailingSlash(PRODUCTION_BASE_URL)} />
-  </Fragment>
-
+<Layout
+  lang="en"
+  title="BGOBS"
+  description="BGOBS (Beau Gosse) is an independent, open-source OBS Studio plugin for background removal, background blur, low-light enhancement, and optional CaCam USB or ADB sources."
+  canonical={PRODUCTION_BASE_URL}
+>
   <Fragment slot="head-bottom">
     <DefineLocalDate />
   </Fragment>
 
-  <main class="white-box">
-    <header class="icon-and-name">
-      <Image src={icon} alt="OBS Background Removal Icon" height="50" />
-      <h1>OBS Background Removal</h1>
-    </header>
-
-    <p>
-      OBS Plugin: Background Removal / Virtual Green-screen and Low-Light
-      Enhancement
-    </p>
-
-    <p style="text-align: center;">
-      <Image
-        src={demo}
-        alt="Demo of OBS Background Removal Plugin"
-        width="600"
-      />
-    </p>
-
-    <h2>
-      Download Latest {release.tag_name}
-      {
-        [
-          "(",
-          <local-date data-date={release.published_at}>
-            <time datetime={release.published_at}>{release.published_at}</time>
-          </local-date>,
-          ")",
-        ]
-      }
-    </h2>
-
-    <ul class="download-links">
-      <li><a href={joinURL(BASE_URL, "windows/")}>Windows</a></li>
-      <li><a href={joinURL(BASE_URL, "macos/")}>macOS</a></li>
-      <li><a href={joinURL(BASE_URL, "ubuntu/")}>Ubuntu</a></li>
-      <li><a href={joinURL(BASE_URL, "flatpak/")}>Flatpak</a></li>
-      <li><a href={joinURL(BASE_URL, "arch/")}>Arch Linux</a></li>
-    </ul>
-
-    <p>
-      See our <a href={joinURL(BASE_URL, "usage/")}>Usage</a> page for instructions
-      on usage in OBS
-    </p>
-
-    <section class="material-button-section">
-      <div class="github-button">
-        <a href={release.html_url} target="_blank" rel="noopener noreferrer">
-          <GitHubMarkWhite viewBox="0 0 98 96" width="24" height="24" />
-          <span>View on GitHub</span>
-        </a>
+  <main id="main-content">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Independent · Open source · GPL-3.0-or-later</p>
+        <h1 id="hero-title">
+          Look sharp on camera.<br /><span>Stay in control.</span>
+        </h1>
+        <p class="lede">
+          BGOBS — “Beau Gosse” — is a third-party plugin for OBS Studio. Remove
+          or blur a background, improve a dim portrait, and optionally bring a
+          CaCam phone feed into OBS over USB or ADB.
+        </p>
+        <div class="button-row">
+          <a class="button primary" href={release.html_url}
+            >Get {release.tag_name}</a
+          >
+          <a class="button" href={joinURL(BASE_URL, "usage/")}
+            >Read the usage guide</a
+          >
+          <a class="button" href={GITHUB_URL}>View source on GitHub</a>
+        </div>
       </div>
-      <div class="video-tutorials-button">
-        <a href={PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL}> ▶︎ YouTube Tutorials </a>
+
+      <aside class="hero-card" aria-label="Latest BGOBS release">
+        <span class="badge latest">Latest release</span>
+        <h2>{release.tag_name}</h2>
+        {
+          release.published_at && (
+            <p>
+              Published{" "}
+              <local-date data-date={release.published_at}>
+                <time datetime={release.published_at}>
+                  {release.published_at}
+                </time>
+              </local-date>
+            </p>
+          )
+        }
+        <ul>
+          <li class:list={{ available: windowsAsset }}>Windows x64</li>
+          <li class:list={{ available: macosAsset }}>macOS universal</li>
+          <li class:list={{ available: ubuntuAsset }}>Ubuntu x86_64</li>
+        </ul>
+        <small>Green dots indicate an installer in this exact release.</small>
+      </aside>
+    </section>
+
+    <section class="section-block" aria-labelledby="features-title">
+      <p class="eyebrow">One plugin, focused tools</p>
+      <h2 id="features-title">Made for a cleaner camera scene</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Background control</h3>
+          <p>
+            Remove a background, replace it with a color, or keep the scene and
+            apply a depth-aware blur.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Low-light enhancement</h3>
+          <p>
+            Improve a dim portrait from the same BGOBS effect filter, with
+            adjustable strength and processing options.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Optional phone sources</h3>
+          <p>
+            Add a separate CaCam source through direct USB or a local ADB
+            connection when the Android app is available to you.
+          </p>
+        </article>
       </div>
     </section>
 
-    <p>
-      <a href={joinURL(BASE_URL, "versions/")}>Version History</a>
-    </p>
+    <section class="section-block split" aria-labelledby="downloads-title">
+      <div>
+        <p class="eyebrow">Official downloads</p>
+        <h2 id="downloads-title">Install only what this release publishes</h2>
+        <p>
+          Platform pages inspect the official GitHub release. When an installer
+          is missing, the page says so and links back to Releases instead of
+          sending you to an unrelated package.
+        </p>
+      </div>
+      <ul class="download-links">
+        <li><a href={joinURL(BASE_URL, "windows/")}>Windows</a></li>
+        <li><a href={joinURL(BASE_URL, "macos/")}>macOS</a></li>
+        <li><a href={joinURL(BASE_URL, "ubuntu/")}>Ubuntu</a></li>
+        <li><a href={joinURL(BASE_URL, "versions/")}>Release archive</a></li>
+      </ul>
+    </section>
 
-    <p>
-      <a href={joinURL(BASE_URL, "dev/")}>Developer resources</a>
-    </p>
-
-    <p>
-      <a href={joinURL(BASE_URL, "uninstall/")}>Uninstall instructions</a>
-    </p>
+    <section class="section-block" aria-labelledby="open-title">
+      <p class="eyebrow">Transparent by design</p>
+      <h2 id="open-title">BGOBS is public. CaCam is separate.</h2>
+      <div class="grid two-up">
+        <article class="card accent-card">
+          <h3>BGOBS</h3>
+          <p>
+            The plugin source, issue tracker, build history, and license are
+            public. BGOBS is distributed under{" "}
+            <a href={LICENSE_URL}>GPL-3.0-or-later</a>.
+          </p>
+        </article>
+        <article class="card">
+          <h3>CaCam</h3>
+          <p>
+            CaCam is a separate, privately developed Android application. It is
+            optional: BGOBS background and low-light filters work without it.
+          </p>
+        </article>
+      </div>
+      <div class="callout info">
+        <p>
+          <strong>Independent project:</strong> BGOBS is not an official OBS Studio
+          component and is not affiliated with or endorsed by the OBS Project.
+        </p>
+      </div>
+    </section>
   </main>
 </Layout>
-
-<style>
-  header.icon-and-name {
-    display: flex;
-    align-items: center;
-  }
-
-  header.icon-and-name h1 {
-    margin-left: 10px;
-  }
-</style>

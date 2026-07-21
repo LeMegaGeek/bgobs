@@ -41,7 +41,7 @@ if not exist "%BIN_DEST%" mkdir "%BIN_DEST%"
 if not exist "%APP_DATA_DEST%" mkdir "%APP_DATA_DEST%"
 if not exist "%USER_DATA_DEST%" mkdir "%USER_DATA_DEST%"
 
-copy /Y "%PACKAGE_ROOT%bgobs\bin\64bit\*.dll" "%BIN_DEST%\" >nul
+xcopy "%PACKAGE_ROOT%bgobs\bin\64bit\*" "%BIN_DEST%\" /E /I /Y /Q >nul
 if errorlevel 1 goto :CopyError
 xcopy "%PACKAGE_ROOT%bgobs\data\*" "%APP_DATA_DEST%\" /E /I /Y /Q >nul
 if errorlevel 1 goto :CopyError
@@ -52,7 +52,7 @@ echo.
 echo BGOBS installed successfully in:
 echo   %PORTABLE_ROOT%
 echo.
-echo Restart OBS, then add the source "CaCam USB".
+echo Restart OBS, then add the source "CaCam".
 pause
 exit /b 0
 

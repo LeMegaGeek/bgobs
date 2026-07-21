@@ -362,5 +362,4 @@ void enhance_filter_video_render(void *data, gs_effect_t *_effect)
 	obs_source_process_filter_tech_end(tf->source, tf->blendEffect, 0, 0, "Draw");
 
 	gs_blend_state_pop();
-
 }

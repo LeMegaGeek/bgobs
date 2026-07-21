@@ -1,55 +1,54 @@
 ---
 # SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 # SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+# SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 layout: ../layouts/MarkdownLayout.astro
 pathname: uninstall
 lang: en
-title: Uninstalling the plugin
-description: Uninstalling the plugin
+title: Uninstall BGOBS
+description: Remove the BGOBS plugin from OBS Studio on Windows, macOS, or Ubuntu.
 ---
 
-# Uninstalling the Plugin
+<p class="eyebrow">Removal guide</p>
 
-Follow the instructions below to remove OBS Background Removal from your system.
+# Uninstall BGOBS
 
----
+Close OBS Studio before removing plugin files. Delete only the BGOBS paths shown
+for your installation; do not remove the parent OBS Studio directories.
 
 ## Windows
 
-Delete the following files and directories from your OBS installation directory:
+For a standard installation, delete:
 
-- `data\obs-plugins\obs-backgroundremoval` (directory)
-- `obs-plugins\64bit\obs-backgroundremoval.dll` (file)
-- `obs-plugins\64bit\obs-backgroundremoval` (directory)
+```text
+C:\ProgramData\obs-studio\plugins\bgobs
+```
 
----
+For portable OBS Studio, delete the `bgobs` plugin directories you copied under
+that portable installation. Their exact root depends on where the portable
+package is stored.
 
 ## macOS
 
-Remove plugin files:
+If BGOBS was installed for the current user, remove:
 
-```sh
-rm -rf \
-  ~/Library/Application\ Support/obs-studio/plugins/obs-backgroundremoval.plugin \
-  ~/Library/Application\ Support/obs-studio/plugins/obs-backgroundremoval.plugin.dSYM
+```text
+~/Library/Application Support/obs-studio/plugins/bgobs.plugin
 ```
 
-Remove registered package info:
-
-```sh
-pkgutil --volume ~ --forget com.royshilkrot.obs-backgroundremoval
-pkgutil --volume ~ --forget "'com.royshilkrot.obs-backgroundremoval'"
-```
-
----
+An administrator-installed package may instead place the plugin under the
+system Library. Use the installer receipt or package documentation to identify
+the exact BGOBS path before deleting it.
 
 ## Ubuntu
 
-Uninstall the package:
+If BGOBS was installed from its official Debian package:
 
 ```sh
-sudo dpkg -r obs-backgroundremoval
+sudo apt remove bgobs
 ```
+
+Restart OBS Studio after removal.

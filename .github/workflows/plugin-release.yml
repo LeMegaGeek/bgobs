@@ -1,36 +1,23 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 
 # SPDX-FileCopyrightText: 2026 Kaito Udagawa <umireon@kaito.tokyo>
+# SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 #
 # SPDX-License-Identifier: Apache-2.0
 
 name: Release Plugin
 
-# file: .github/workflows/plugin-release.yml
-# author: Kaito Udagawa <umireon@kaito.tokyo>
-# version: 1.0.1
-# date: 2026-03-31
-
 on:
   workflow_call:
-    inputs:
-      environment:
-        description: The environment name for the release jobs, or empty string for no environment
-        required: false
-        type: string
-        default: ''
 
 permissions: {}
 
 jobs:
-  create-draft-release:
-    name: Create Draft Release
-
-    if: startsWith(github.ref, 'refs/tags/')
-
-    environment: ${{ inputs.environment }}
-    runs-on: ubuntu-slim
-
+  release:
+    name: Verify and publish tested artifacts
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       artifact-metadata: write
       attestations: write
@@ -38,55 +25,99 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout
+      - name: Checkout tagged source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Select secure directory
+      - name: Select secure artifact directory
         id: secure-dir
-        shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        shell: bash --noprofile --norc -euo pipefail {0}
         run: |
-          printf 'ARTIFACTS_DIR=%s\n' "$(mktemp -d -p "$RUNNER_TEMP" artifacts.XXXXXXXXXX)" >> "$GITHUB_OUTPUT"
+          printf 'ARTIFACTS_DIR=%s\n' "$(mktemp -d -p "$RUNNER_TEMP" bgobs-release.XXXXXXXXXX)" >> "$GITHUB_OUTPUT"
 
-      - name: Download plugin binaries
+      - name: Download tested platform packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: pluginbinary-*
           merge-multiple: true
           path: ${{ steps.secure-dir.outputs.ARTIFACTS_DIR }}
 
-      - name: Attest plugin binary artifacts
+      - name: Validate assets and generate checksums and SBOM
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          ARTIFACTS_DIR: '${{ steps.secure-dir.outputs.ARTIFACTS_DIR }}'
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match VERSION $version." >&2
+            exit 1
+          fi
+          python3 scripts/generate_release_metadata.py \
+            --artifact-dir "$ARTIFACTS_DIR" \
+            --version "$version"
+
+      - name: Attest packages, checksums, and SBOM
         id: attest
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: ${{ steps.secure-dir.outputs.ARTIFACTS_DIR }}/*
 
-      - name: Create a draft release with artifacts
-        shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+      - name: Add downloadable provenance bundle
+        shell: bash --noprofile --norc -euo pipefail {0}
         env:
           ARTIFACTS_DIR: '${{ steps.secure-dir.outputs.ARTIFACTS_DIR }}'
           BUNDLE_PATH: '${{ steps.attest.outputs.bundle-path }}'
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          test -s "$BUNDLE_PATH"
+          cp "$BUNDLE_PATH" "$ARTIFACTS_DIR/BGOBS-$version-provenance.jsonl"
+
+      - name: Publish aggregated GitHub release
+        shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        env:
+          ARTIFACTS_DIR: '${{ steps.secure-dir.outputs.ARTIFACTS_DIR }}'
           GH_REPO: '${{ github.repository }}'
           GH_TOKEN: '${{ github.token }}'
         run: |
-          # Output the existing release info, or create a new draft release if not exists.
-          if ! gh release view "$GITHUB_REF_NAME"; then
-            gh release create "$GITHUB_REF_NAME" --draft --notes "" --title "$GITHUB_REF_NAME" --verify-tag
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          notes_file="release-notes/$tag.md"
+          test -s "$notes_file"
+
+          release_flags=()
+          version_without_build="${version%%+*}"
+          if [[ "$version_without_build" == *-* ]]; then
+            release_flags+=(--prerelease)
+          else
+            release_flags+=(--prerelease=false --latest)
           fi
 
-          ASSETS=("$BUNDLE_PATH")
+          publish_draft=false
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if [[ "$(gh release view "$tag" --json isDraft --jq .isDraft)" == true ]]; then
+              publish_draft=true
+            fi
+          else
+            gh release create "$tag" \
+              --draft \
+              --verify-tag \
+              --title "BGOBS $version" \
+              --notes-file "$notes_file"
+            publish_draft=true
+          fi
 
-          for f in "$ARTIFACTS_DIR"/*; do
-            case "$f" in
-            *-windows-x64.zip) ASSETS+=("$f") ;;
-            *-windows-x64-pdb.zip) ASSETS+=("$f") ;;
-            *.pkg) ASSETS+=("$f") ;;
-            *.dSYM.tar.zst) ASSETS+=("$f") ;;
-            *-x86_64-linux-gnu.deb) ASSETS+=("$f") ;;
-            *-x86_64-linux-gnu-dbgsym.ddeb) ASSETS+=("$f") ;;
-            esac
-          done
+          assets=("$ARTIFACTS_DIR"/*)
+          if (( ${#assets[@]} < 9 )); then
+            echo "The aggregated release is missing expected metadata or packages." >&2
+            exit 1
+          fi
+          gh release upload "$tag" "${assets[@]}" --clobber
 
-          gh release upload "$GITHUB_REF_NAME" "${ASSETS[@]}" --clobber
+          edit_flags=(--title "BGOBS $version" --notes-file "$notes_file")
+          edit_flags+=("${release_flags[@]}")
+          if [[ "$publish_draft" == true ]]; then
+            edit_flags+=(--draft=false)
+          fi
+          gh release edit "$tag" "${edit_flags[@]}"

@@ -1,65 +1,60 @@
-# Local Linux OBS Build
+# Local Linux OBS build
 
-This is the private local build workflow used for testing `bgobs` against the OBS installation on this machine. It
-keeps the generated build tree under `build/local-obs` and the local dependency sysroot under `.deps`.
+This guide covers a developer build against an OBS installation and dependency
+prefix already available on the machine. Package names and paths vary by
+distribution; see the Fedora and openSUSE notes in this directory for examples.
 
 ## Configure
 
-Run CMake from the repository root:
+At minimum, install a C++ toolchain, CMake, OBS development headers, ONNX
+Runtime, OpenCV, libcurl, Rust, and the libraries required by the selected OBS
+build. Then configure from the repository root:
 
-```bash
-SYSROOT="$PWD/.deps/sysroot"
-PKG_CONFIG_PATH="$PWD/.deps/pkgconfig:$SYSROOT/usr/lib/x86_64-linux-gnu/pkgconfig:$PWD/.deps/onnxruntime/lib/pkgconfig" \
-PKG_CONFIG_SYSROOT_DIR="$SYSROOT" \
+```sh
 cmake -S . -B build/local-obs -G Ninja \
-  -DOS_LINUX=Ubuntu \
   -DBUILD_TESTING=ON \
-  -DCMAKE_INSTALL_PREFIX="$HOME/.local" \
-  -DCMAKE_PREFIX_PATH="$SYSROOT/usr;$PWD/.deps/onnxruntime" \
-  -DCURL_INCLUDE_DIR="$SYSROOT/usr/include/x86_64-linux-gnu" \
-  -DCURL_LIBRARY="$SYSROOT/usr/lib/x86_64-linux-gnu/libcurl.so" \
-  -DCMAKE_C_FLAGS="-isystem $SYSROOT/usr/include" \
-  -DCMAKE_CXX_FLAGS="-isystem $SYSROOT/usr/include" \
-  -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-  -DCMAKE_INSTALL_RPATH='$ORIGIN'
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo
 ```
 
-## Build And Test
+If dependencies live outside system paths, add their prefixes with
+`CMAKE_PREFIX_PATH` or use the appropriate CMake cache options documented by
+the configure output. Do not copy machine-specific absolute paths into a
+committed preset.
 
-```bash
+## Build and test
+
+```sh
 cmake --build build/local-obs --parallel
 ctest --test-dir build/local-obs --output-on-failure
 ```
 
-For formatting and metadata checks:
+Also run the Rust and repository checks from [CONTRIBUTING.md](../CONTRIBUTING.md).
+For a diagnostic build, configure a separate directory with
+`BGOBS_ENABLE_SANITIZERS=ON`. ThreadSanitizer uses another separate directory
+with `BGOBS_ENABLE_THREAD_SANITIZER=ON`.
 
-```bash
-.venv/bin/clang-format --dry-run --Werror \
-  src/background-filter.cpp \
-  src/background/mask-post-processing.cpp \
-  src/background/mask-post-processing.hpp \
-  tests/background/mask-post-processing-test.cpp
-.venv/bin/gersemi --check CMakeLists.txt
-.venv/bin/reuse lint
-git diff --check
+## Install for manual testing
+
+Prefer a per-user OBS plugin directory so a development build cannot overwrite
+a packaged system plugin. A typical Linux layout is:
+
+```text
+~/.config/obs-studio/plugins/bgobs/
+├── bin/64bit/bgobs.so
+└── data/
 ```
 
-## Install For Manual OBS Testing
+The exact output paths depend on the selected generator and install prefix.
+Use `cmake --install` with a staging prefix first, inspect the resulting tree,
+then copy that tree into the user plugin directory. Keep the required ONNX
+Runtime libraries and model files with the plugin package.
 
-Use this only after the build and tests pass. The command installs the plugin into the system OBS plugin directory and
-copies the ONNX Runtime shared libraries needed by the local build.
+Start OBS from a terminal, confirm that the log identifies the expected BGOBS
+version and path, then exercise the changed filter or source. Remove the local
+copy after testing if a system package should take precedence again.
 
-```bash
-sudo cmake --install build/local-obs --prefix /usr
-sudo install -m 0755 .deps/onnxruntime/lib/libonnxruntime.so* /usr/lib/x86_64-linux-gnu/obs-plugins/
-sudo install -m 0755 .deps/onnxruntime/lib/libonnxruntime_providers*.so /usr/lib/x86_64-linux-gnu/obs-plugins/
-```
+<!--
+SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 
-After installation, start OBS from a terminal and confirm that BGOBS loads. The filter logs the effective mask settings
-when it is created.
-
----
-
-> SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>  
->
-> SPDX-License-Identifier: GPL-3.0-or-later  
+SPDX-License-Identifier: GPL-3.0-or-later
+-->

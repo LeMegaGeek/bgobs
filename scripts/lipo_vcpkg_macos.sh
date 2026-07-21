@@ -51,6 +51,36 @@ lipo_vcpkg() {
 
     lipo "${arm64_path}" "${x64_path}" -create -output "${universal_path}"
   done
+
+  for lib_full_path in "${VCPKG_INSTALLED_ARM64}"/lib/*.dylib "${VCPKG_INSTALLED_ARM64}"/debug/lib/*.dylib; do
+    if [[ -L "${lib_full_path}" ]]; then
+      continue
+    fi
+
+    lib_rel_path="${lib_full_path#${VCPKG_INSTALLED_ARM64}/}"
+    arm64_path="${VCPKG_INSTALLED_ARM64}/${lib_rel_path}"
+    x64_path="${VCPKG_INSTALLED_X64}/${lib_rel_path}"
+    universal_path="${VCPKG_INSTALLED_UNIVERSAL}/${lib_rel_path}"
+
+    if ! [[ -f "${x64_path}" ]]; then
+      echo "ERROR: ${x64_path} does not exist." >&2
+      exit 1
+    fi
+
+    echo "Processing ${lib_rel_path}..."
+    lipo "${arm64_path}" "${x64_path}" -create -output "${universal_path}"
+    install_name_tool -id "@rpath/${lib_rel_path##*/}" "${universal_path}"
+  done
+
+  for lib_full_path in "${VCPKG_INSTALLED_ARM64}"/lib/*.dylib "${VCPKG_INSTALLED_ARM64}"/debug/lib/*.dylib; do
+    if ! [[ -L "${lib_full_path}" ]]; then
+      continue
+    fi
+
+    lib_rel_path="${lib_full_path#${VCPKG_INSTALLED_ARM64}/}"
+    universal_path="${VCPKG_INSTALLED_UNIVERSAL}/${lib_rel_path}"
+    ln -s "$(readlink "${lib_full_path}")" "${universal_path}"
+  done
 }
 
 if [[ "$#" -ne 3 ]]; then

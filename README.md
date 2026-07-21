@@ -1,225 +1,125 @@
-# Comment devenir beau gosse dans OBS
+# BGOBS — background tools for OBS Studio
 
-BGOBS, pour **Beau Gosse OBS**, est un plugin OBS Studio qui retire ou floute l'arriere-plan d'une webcam tout en cherchant un contour plus propre autour du sujet.
+BGOBS (**Beau Gosse OBS**) is a free and open-source OBS Studio plugin for
+real-time portrait segmentation, background blur, and low-light enhancement.
+It is designed for clean, stable webcam edges and keeps video processing on
+your computer.
 
-Depuis la version `0.3.0`, BGOBS ajoute une source **CaCam USB** pour utiliser un telephone
-Android comme camera OBS sans partage de connexion USB, sans ADB et sans
-modifier les routes reseau du PC.
+BGOBS is independent third-party software and is not affiliated with or
+endorsed by the OBS Project. AI-assisted work is disclosed in
+[GENERATED.md](GENERATED.md).
 
-## Ce Que Fait BGOBS
+[Download the latest release](https://github.com/LeMegaGeek/bgobs/releases/latest) ·
+[Report a bug](https://github.com/LeMegaGeek/bgobs/issues) ·
+[Read the documentation](docs/README.md)
 
-- ajoute un filtre OBS nomme **Rend-moi beau gosse** dans l'interface francaise ;
-- expose des styles de masque **Naturel**, **Studio**, **Net** et **Performance** ;
-- propose un **apercu du masque** pour regler le contour rapidement ;
-- applique un lissage temporel pour limiter les contours qui tremblent ;
-- affine les bords avec l'image source pour reduire les halos ;
-- conserve le flou d'arriere-plan et l'amelioration basse lumiere du projet d'origine.
-- ajoute une source OBS **CaCam USB** compatible avec le preset `USB BGOBS` de
-  l'application Android CaCam.
+## Features
 
-L'objectif n'est pas seulement de supprimer le fond. BGOBS vise une image plus propre en direct : moins de bord crante, moins de halo autour des cheveux et des epaules, moins d'instabilite d'une image a l'autre.
+- Remove or blur a camera background without a green screen.
+- Choose Natural, Studio, Crisp, or Performance mask presets.
+- Preview the mask and tune threshold, edge softness, cleanup, refinement,
+  expansion, feathering, and temporal smoothing.
+- Improve poorly lit video with the included enhancement models.
+- Use several local ONNX segmentation models on CPU or a supported GPU
+  execution provider.
+- Add the optional **CaCam** source over direct USB or ADB.
+- Preserve existing OBS scenes and filter settings across plugin upgrades.
 
-## Version 0.3.6
+BGOBS works with ordinary OBS video sources. CaCam is not required for the
+background filters or enhancement tools.
 
-- Distingue l'ouverture de l'interface USB de la connexion effective avec
-  l'application CaCam.
-- Signale clairement quand le telephone est verrouille ou que CaCam n'envoie
-  aucune donnee apres cinq secondes.
-- Complete CaCam `0.9.8`, qui attend le premier plan Android avant d'ouvrir la
-  camera et ne plante plus avec l'erreur `CAMERA_DISABLED`.
+## Install
 
-## Version 0.3.5
+Release assets that complete their platform build and smoke test are published
+on [GitHub Releases](https://github.com/LeMegaGeek/bgobs/releases). Use only a
+package actually attached to the selected release. Depending on the release,
+the available artifact types can include:
 
-- Active le mode video asynchrone non tamponne d'OBS pour afficher la frame la
-  plus recente sans file d'attente interne.
-- Jette les frames qui ont accumule plus de 150 ms d'attente cote telephone ou
-  transport USB, au lieu d'augmenter progressivement la latence visible.
-- Compense lentement la derive d'horloge Android/PC pour conserver cette mesure
-  de latence pendant les longues sessions.
-- Declenche automatiquement Android Open Accessory sur les telephones Android,
-  notamment Xiaomi, et conserve la connexion pendant les changements de scene.
-- Ajoute des diagnostics precis pour la premiere frame, les erreurs AOA et le
-  pilote WinUSB requis sous Windows.
-- Ajoute un installateur pour OBS PortableApps compatible avec `OBSPortable.exe`.
-- Complete CaCam `0.9.6`, qui gere la rotation et la reconnexion apres un
-  redemarrage d'OBS.
+- **Windows x64:** extract the ZIP and copy the `bgobs` plugin folder into the
+  OBS plugin directory. The ZIP also contains helpers for OBS PortableApps.
+- **macOS:** run the `.pkg` installer whose architecture and minimum macOS
+  version are stated on that release.
+- **Ubuntu x86_64:** install the `.deb` package built for the stated Ubuntu
+  version.
 
-## Version 0.3.4
+If a platform has no attached artifact, BGOBS makes no binary-support claim for
+that platform in that version; use the source and build documentation instead.
+Close OBS before replacing plugin files, then restart it. Detailed Windows
+PortableApps instructions are in
+[docs/WINDOWS-PORTABLEAPPS.md](docs/WINDOWS-PORTABLEAPPS.md).
 
-- Reduit la latence de la source **CaCam USB** en lisant le flux USB avec un
-  buffer libusb plus large et reutilise.
-- Complete CaCam `0.9.5`, qui envoie moins de pixels bruts et jette les frames
-  USB obsoletes cote telephone.
-- Conserve le mode HTTP/RTSP existant : seule la source directe **CaCam USB**
-  change.
+## Use the background filter
 
-## Version 0.3.3
+1. Add or select a video source in OBS.
+2. Open the source's **Filters** dialog.
+3. Add **Make me look good** under **Effect Filters**. The label is translated
+   when OBS uses a supported locale.
+4. Select a BGOBS style and use **Mask preview** while fine-tuning the edge.
+5. Disable the preview when the result looks right.
 
-- Corrige l'image figee en USB BGOBS dans OBS en utilisant l'horloge video
-  locale d'OBS pour les frames USB.
-- Stabilise la sortie video USB avec des buffers BGRA conserves entre deux
-  frames.
-- Ajoute `libusb-1.0.dll` au paquet Windows portable et le charge depuis le
-  dossier du plugin.
+Soft frontal lighting often improves segmentation more than a heavier model.
+If hair or hands flicker, try the Natural preset before changing individual
+advanced controls.
 
-## Version 0.3.2
+## Optional CaCam source
 
-- Corrige la lecture USB BGOBS quand Android envoie l'en-tete et la frame dans
-  le meme transfert bulk libusb.
+BGOBS includes an interoperable receiver for the CaCam USB protocol and an ADB
+source mode. **CaCam is a separate, privately developed Android application; it
+is not part of this open-source repository and is not required to use BGOBS.**
 
-## Version 0.3.1
+For direct USB:
 
-- Ajoute la release Windows x64 officielle de BGOBS, compatible avec OBS portable.
+1. Select **USB BGOBS** in CaCam and start streaming.
+2. Add the **CaCam** source in OBS and select **USB**.
+3. Accept Android's accessory permission prompt if it appears.
 
-## Version 0.3.0
+For ADB:
 
-Cette version ajoute l'integration CaCam USB :
+1. Enable USB debugging on the Android device and authorize the computer.
+2. Add the **CaCam** source in OBS and select **ADB**.
+3. Choose a quality preset. BGOBS creates a local ADB port forward and reads
+   frames from CaCam on `127.0.0.1`.
 
-- nouvelle source OBS : `bgobs_cacam_usb_source` ;
-- activation Android Open Accessory cote PC via `libusb` charge dynamiquement ;
-- reception de frames NV21 depuis CaCam Android ;
-- conversion YUV vers BGRA avec OpenCV avant sortie video OBS ;
-- aucun partage de connexion USB et aucun debogage USB requis.
+The wire format is documented independently in
+[docs/CACAM-USB-PROTOCOL.md](docs/CACAM-USB-PROTOCOL.md), so compatible senders
+can be implemented without access to CaCam's source code.
 
-Le filtre BGOBS reste separe : ajoute la source **CaCam USB**, puis ajoute le
-filtre **Rend-moi beau gosse** sur cette source.
+## Privacy and networking
 
-## Version 0.2.0
+Model inference and frame processing happen locally. BGOBS does not upload
+camera frames or masks. The optional update check contacts GitHub only when it
+is enabled; it is disabled in the default configuration. ADB mode communicates
+with a locally forwarded loopback port.
 
-Cette version pose la base propre du nouveau projet :
+## Build and test
 
-- nom court : **BGOBS** ;
-- nom long : **Beau Gosse OBS** ;
-- module OBS : `bgobs` ;
-- binaire Linux : `bgobs.so` ;
-- binaire Windows : `bgobs.dll` ;
-- dossier de donnees OBS : `bgobs` ;
-- filtre principal : `bgobs_background_removal` ;
-- filtre portrait : `bgobs_enhance_portrait` ;
-- bundle ID : `net.lemegageek.bgobs` ;
-- coeur Rust : `crates/bgobs-core`.
+The native plugin is C++ with a small Rust library for testable mask operations.
+It uses OBS, ONNX Runtime, OpenCV, and libcurl; the optional direct USB source
+loads libusb at runtime.
 
-Le C++ garde l'integration OBS, les textures, les proprietes et ONNX Runtime. Rust prend progressivement en charge les traitements purs du masque, plus faciles a tester sans OBS.
-
-## Utilisation Dans OBS
-
-Avec une source existante :
-
-1. Ajoute ou selectionne une source video.
-2. Ouvre les filtres de la source.
-3. Ajoute **Rend-moi beau gosse**.
-4. Choisis un style BGOBS.
-5. Active **Apercu du masque** si tu veux regler le contour finement.
-6. Desactive l'apercu quand le resultat te convient.
-
-Avec CaCam en USB direct :
-
-1. Branche le telephone Android au PC en USB.
-2. Dans CaCam, choisis le preset **USB BGOBS** et demarre le flux.
-3. Dans OBS, ajoute la source **CaCam USB**.
-4. Accepte l'autorisation USB sur le telephone si Android la demande.
-5. Deverrouille le telephone et laisse CaCam visible jusqu'a la premiere image.
-6. Ajoute le filtre **Rend-moi beau gosse** sur la source **CaCam USB**.
-
-Une lumiere frontale douce reste souvent plus efficace qu'un modele plus lourd. Les contours difficiles viennent souvent d'un contre-jour, d'un fond trop proche de la couleur des cheveux, ou d'une webcam trop compressee.
-
-## Installation Linux Utilisateur
-
-Pour une installation OBS locale sans droits administrateur :
-
-```text
-~/.config/obs-studio/plugins/bgobs/
-├── bin/64bit/bgobs.so
-└── data/
-```
-
-Les bibliotheques ONNX Runtime doivent etre accessibles au chargement du plugin. Pour notre build local, elles sont placees a cote du `.so` :
-
-```text
-~/.config/obs-studio/plugins/bgobs/bin/64bit/
-├── bgobs.so
-├── libonnxruntime.so
-├── libonnxruntime.so.1
-├── libonnxruntime.so.1.23.2
-└── libonnxruntime_providers_shared.so
-```
-
-Si l'ancien paquet systeme est encore installe, OBS peut aussi afficher l'ancien filtre. Il n'entre plus en collision avec BGOBS `0.3.0`, mais il vaut mieux le retirer :
-
-```bash
-sudo apt remove obs-backgroundremoval
-```
-
-## Installation Windows PortableApps
-
-Pour OBS PortableApps, ferme OBS, decompresse le ZIP puis lance
-`install-portable.bat`. Le script reconnait les lanceurs `OBSPortable.exe` et
-`OBS-StudioPortable.exe`, puis installe automatiquement le plugin et ses donnees.
-
-Apres redemarrage d'OBS, ajoute la source **CaCam USB**. Le fichier
-`libusb-1.0.dll` doit rester a cote de `bgobs.dll` pour que cette source soit
-proposee.
-
-L'installation manuelle reste possible. Le ZIP Windows doit contenir un dossier
-`bgobs`.
-
-Copie les DLL dans :
-
-```text
-<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\
-```
-
-Copie les donnees dans les deux emplacements utilises par PortableApps :
-
-```text
-<OBS-StudioPortable>\App\obs-studio\data\obs-plugins\bgobs\
-<OBS-StudioPortable>\Data\obs-plugins\bgobs\
-```
-
-La disposition finale doit inclure :
-
-```text
-<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\bgobs.dll
-<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\libusb-1.0.dll
-<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
-<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
-<OBS-StudioPortable>\App\obs-studio\data\obs-plugins\bgobs\models\
-<OBS-StudioPortable>\Data\obs-plugins\bgobs\models\
-```
-
-Avant une installation manuelle, lance `remove-old-installation.bat` depuis le
-ZIP. Il retire les anciennes copies `obs-backgroundremoval` et `bgobs`.
-
-## Compiler
-
-Rust :
-
-```bash
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
+```sh
 cargo fmt --all --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
-Plugin OBS local :
+Platform-specific dependencies and build notes are indexed in
+[docs/README.md](docs/README.md). See [CONTRIBUTING.md](CONTRIBUTING.md) before
+opening a pull request.
 
-```bash
-cmake --build build/local-obs --target bgobs
-ctest --test-dir build/local-obs --output-on-failure
-```
+## Project and license
 
-Controles de qualite :
+BGOBS is maintained by LeMegaGeek and is derived from the OBS Background
+Removal project originally created by Roy Shilkrot and later maintained with
+Kaito Udagawa. See [AUTHORS.md](AUTHORS.md) and [NOTICE](NOTICE) for attribution.
 
-```bash
-.venv/bin/gersemi --check CMakeLists.txt
-.venv/bin/reuse lint
-git diff --check
-```
-
-## Origine Et Licence
-
-BGOBS est derive de **OBS Background Removal** de Roy Shilkrot et Kaito Udagawa.
-
-Le projet reste distribue sous licence **GPL-3.0-or-later**. Les modeles embarques ont leurs propres licences dans `data/models/*.license` et doivent rester avec les fichiers correspondants.
+BGOBS is distributed under **GPL-3.0-or-later**. Individual models and bundled
+third-party components retain their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), the adjacent `.license` files,
+and the texts in `LICENSES/`.
 
 <!--
 SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>

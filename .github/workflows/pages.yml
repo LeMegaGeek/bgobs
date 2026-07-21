@@ -5,6 +5,16 @@
 name: Pages CI
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/pages.yml
+      - pages/**
+      - release-notes/**
+  release:
+    types:
+      - published
   workflow_dispatch:
 
 concurrency:
@@ -46,6 +56,13 @@ jobs:
         working-directory: ${{ env.BUILD_PATH }}
         run: npm ci
 
+      - name: Test and check formatting
+        shell: bash
+        working-directory: ${{ env.BUILD_PATH }}
+        run: |
+          npm test
+          npx prettier --check .
+
       - name: Build with Astro
         shell: bash
         working-directory: ${{ env.BUILD_PATH }}
@@ -72,7 +89,10 @@ jobs:
   deploy:
     name: Deploy Pages
 
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: >-
+      (github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) ||
+      (github.event_name == 'release' && github.event.action == 'published')
     needs: build
 
     runs-on: ubuntu-slim

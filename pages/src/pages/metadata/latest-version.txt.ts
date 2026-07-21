@@ -3,22 +3,16 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Octokit } from "@octokit/rest";
-
-import { GITHUB_OWNER, GITHUB_REPO } from "../../lib/info.js";
+import { getLatestBgobsRelease } from "../../lib/releases.js";
 
 export async function GET() {
-  const octokit = new Octokit({ auth: import.meta.env.GITHUB_TOKEN });
+  const latestRelease = await getLatestBgobsRelease();
 
-  const latestRelease = await octokit.rest.repos.getLatestRelease({
-    owner: GITHUB_OWNER,
-    repo: GITHUB_REPO,
-  });
-
-  return new Response(latestRelease.data.tag_name, {
+  return new Response(latestRelease.tag_name, {
     status: 200,
     headers: {
-      "Content-Type": "text/plain",
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "public, max-age=300",
     },
   });
 }

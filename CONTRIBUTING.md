@@ -1,75 +1,110 @@
-# CONTRIBUTING.md for BGOBS
+# Contributing to BGOBS
 
-## Legal and Community Guidelines
+Thank you for helping improve BGOBS. Bug reports, documentation fixes,
+translations, tests, and code changes are welcome.
 
-To keep `bgobs` safe and reliable for users, contributors, and maintainers, contributors must understand and follow
-these terms.
+## Before starting
 
-### 1. Licensing and Patent Grant
+- Search [open issues](https://github.com/LeMegaGeek/bgobs/issues) before filing
+  a duplicate.
+- For a large change, open an issue first so its design and platform impact can
+  be discussed.
+- Keep changes focused. Avoid mixing formatting-only rewrites with functional
+  changes.
+- Do not include secrets, proprietary SDK files, private CaCam source code, or
+  recordings that identify people without their consent.
 
-- **GPL-3.0-or-later**: You agree to distribute your contribution under the GNU General Public License v3.0 or later.
-- **Patent License**: Refer to the [terms of GNU GPLv3 (Section 11)](https://www.gnu.org/licenses/gpl-3.0.html#section11) about patents.
+## Development workflow
 
-### 2. License Headers
+1. Fork the repository and create a branch from `main`.
+2. Make the smallest complete change that solves the problem.
+3. Add or update tests and documentation where appropriate.
+4. Run the relevant checks below.
+5. Open a pull request explaining the problem, the solution, and how it was
+   tested.
 
-To ensure the transparency of our codebase, we require all new code to include the following header. Please provide the year you wrote this code, your full legal name, and your email address associated with your GitHub account.
+## Licensing and attribution
 
-```cpp
-/*
- * SPDX-FileCopyrightText: Copyright (C) [Year] [Author Name] [Email]
- * SPDX-License-Identifier: GPL-3.0-or-later
- *
- * OBS Plugin: BGOBS / Beau Gosse OBS
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+Contributions are accepted under **GPL-3.0-or-later**, the project's license.
+Use concise REUSE-compatible headers on new source files:
+
+```text
+SPDX-FileCopyrightText: YEAR NAME OR ORGANIZATION
+SPDX-License-Identifier: GPL-3.0-or-later
 ```
 
-### 3. Code Integrity
+Use the file's existing license when modifying third-party or differently
+licensed material. Do not replace existing copyright notices with your own.
+Binary assets need a neighboring `.license` file unless `REUSE.toml` already
+covers them.
 
-We always welcome every contribution! To deliver the value of your work to our users in a professional manner, please adhere to the following policies:
+A DCO sign-off (`git commit -s`) and a cryptographic commit signature are
+welcome, but neither is required unless a repository rule displayed by GitHub
+explicitly says otherwise. A pull request still needs a clear author identity
+and must contain only material the contributor is allowed to submit.
 
-- **No Unverified Code**: Do not submit code that you cannot fully understand, review, and explain. AI-assisted work
-  must be inspected, edited, tested, and owned by the contributor before it is submitted.
-- **Responsibility**: You must take responsibility for your code. Please ensure that your contribution has clean licensing and is reliable. We are here to help you to accomplish this, of course!
+## AI-assisted contributions
 
-### 4. Developer Certificate of Origin (DCO) and Commit Signing
+AI tools may be used as assistants. Contributors remain responsible for every
+submitted line and must:
 
-Please sign off (-s) all your commits (DCO), and sign all your commits (-S) with your GPG or SSH key:
+- understand and review the result;
+- verify behavior, licensing, security, and privacy implications;
+- remove fabricated claims, dependencies, citations, and APIs;
+- disclose material AI assistance in the pull request when it helps reviewers
+  assess provenance or risk.
 
-```
-git commit -s -S
-```
+Do not submit unreviewed generated output. See [GENERATED.md](GENERATED.md) for
+the project's own disclosure.
 
-Please refer to the [GitHub Document for commit signing](https://docs.github.com/authentication/managing-commit-signature-verification) for configuring commit signing.
+## Checks
 
-### 5. Local checks
-
-Run the portable checks before submitting a change:
+Run the portable checks from the repository root:
 
 ```sh
 cargo fmt --all --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
+git diff --check
+```
+
+For documentation-site changes:
+
+```sh
 cd pages
 npm ci
+npm audit
 npm test
+npx prettier --check .
 npm run build
 ```
 
-Native builds should also run CTest. On Clang or GCC, configure a diagnostic
-build with `-DBGOBS_ENABLE_SANITIZERS=ON` to enable AddressSanitizer and
-UndefinedBehaviorSanitizer. Use a separate build with
-`-DBGOBS_ENABLE_THREAD_SANITIZER=ON` for ThreadSanitizer; the two modes are
-intentionally mutually exclusive.
+For native changes, configure a build with `BUILD_TESTING=ON`, build the plugin,
+and run CTest. On Clang or GCC, also use a separate sanitizer build when the
+changed code can be covered:
+
+```sh
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+`BGOBS_ENABLE_SANITIZERS=ON` enables AddressSanitizer and
+UndefinedBehaviorSanitizer. `BGOBS_ENABLE_THREAD_SANITIZER=ON` enables
+ThreadSanitizer in a separate build; these modes are intentionally mutually
+exclusive.
+
+Hardware-specific changes should include the tested OBS version, operating
+system, architecture, GPU or USB device where relevant, and an OBS log with
+sensitive paths or identifiers removed.
+
+## Reporting security issues
+
+Do not publish exploit details in a normal issue. Follow
+[SECURITY.md](SECURITY.md) instead.
+
+<!--
+SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
+
+SPDX-License-Identifier: GPL-3.0-or-later
+-->

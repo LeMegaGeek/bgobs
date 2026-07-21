@@ -1,6 +1,7 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -21,33 +22,21 @@ interface Props {
 
 const { BASE_URL } = import.meta.env;
 const { pathname, lang, title, description } = Astro.props.frontmatter;
+const canonical = joinURL(PRODUCTION_BASE_URL, pathname);
 ---
 
-<Layout lang={lang} title={title}>
-  <Fragment slot="head-info">
-    <meta name="description" content={description} />
-    <link
-      rel="canonical"
-      href={withTrailingSlash(joinURL(PRODUCTION_BASE_URL, pathname))}
-    />
-  </Fragment>
-
-  <main class="white-box">
+<Layout
+  lang={lang}
+  title={title}
+  description={description}
+  canonical={canonical}
+>
+  <main id="main-content" class="content-panel prose">
     <slot />
 
     <nav class="page-nav" aria-label="Page navigation">
-      <ul>
-        <li>
-          <a href={withTrailingSlash(BASE_URL)}>Back to Top</a>
-        </li>
-        <li>
-          <a
-            href={withTrailingSlash(GITHUB_URL)}
-            target="_blank"
-            rel="noopener noreferrer">GitHub Repository</a
-          >
-        </li>
-      </ul>
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+      <a href={withTrailingSlash(GITHUB_URL)}>GitHub repository</a>
     </nav>
   </main>
 </Layout>

@@ -1,47 +1,66 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { joinURL, withTrailingSlash } from "ufo";
 
 import Layout from "../../layouts/Layout.astro";
-
-import { PRODUCTION_BASE_URL } from "../../lib/info.js";
+import { GITHUB_URL, PRODUCTION_BASE_URL } from "../../lib/info.js";
 
 const { BASE_URL } = import.meta.env;
 ---
 
-<Layout lang="en" title="Developer resources for OBS Background Removal">
-  <Fragment slot="head-info">
-    <meta
-      name="description"
-      content="Developer resources for OBS Background Removal"
-    />
-    <link
-      rel="canonical"
-      href={withTrailingSlash(joinURL(PRODUCTION_BASE_URL, "dev"))}
-    />
-  </Fragment>
+<Layout
+  lang="en"
+  title="Develop BGOBS"
+  description="Contribute to the public BGOBS source repository and run its current documented validation checks."
+  canonical={joinURL(PRODUCTION_BASE_URL, "dev")}
+>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">Open development</p>
+    <h1>Develop BGOBS</h1>
+    <p class="lede">
+      The canonical build and contribution instructions live with the source so
+      they stay aligned with the current toolchain.
+    </p>
 
-  <main class="white-box">
-    <h1>Developer resources for OBS Background Removal</h1>
+    <div class="grid two-up">
+      <section class="card">
+        <h2>Build and test</h2>
+        <p>
+          Start with the repository's development guide for current CMake, Rust,
+          native-test, and website validation commands.
+        </p>
+        <a class="button" href={GITHUB_URL + "/blob/main/docs/DEVELOPMENT.md"}
+          >Development guide</a
+        >
+      </section>
+      <section class="card">
+        <h2>Contribute</h2>
+        <p>
+          Read the contribution, licensing, privacy, and AI-assistance rules
+          before opening a pull request.
+        </p>
+        <a class="button" href={GITHUB_URL + "/blob/main/CONTRIBUTING.md"}
+          >Contribution guide</a
+        >
+      </section>
+    </div>
 
-    <ul>
-      <li>
-        <a href={joinURL(BASE_URL, "dev/windows/")}
-          >Development guide on Windows</a
-        >
-      </li>
-      <li>
-        <a href={joinURL(BASE_URL, "dev/macos/")}>Development guide on macOS</a>
-      </li>
-      <li>
-        <a href={joinURL(BASE_URL, "dev/ubuntu/")}
-          >Development guide on Ubuntu</a
-        >
-      </li>
-    </ul>
+    <aside class="callout info">
+      <p>
+        BGOBS is the public plugin repository. Do not add private CaCam source,
+        credentials, identifiable recordings, device serials, or unsanitized OBS
+        logs to a commit or issue.
+      </p>
+    </aside>
+
+    <nav class="page-nav" aria-label="Page navigation">
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+      <a href={GITHUB_URL}>Browse source</a>
+    </nav>
   </main>
 </Layout>

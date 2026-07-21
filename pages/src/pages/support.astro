@@ -1,0 +1,90 @@
+---
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { joinURL, withTrailingSlash } from "ufo";
+
+import Layout from "../layouts/Layout.astro";
+import {
+  GENERATED_CONTENT_URL,
+  GITHUB_URL,
+  ISSUES_URL,
+  PRODUCTION_BASE_URL,
+  SECURITY_URL,
+} from "../lib/info.js";
+
+const { BASE_URL } = import.meta.env;
+---
+
+<Layout
+  lang="en"
+  title="BGOBS support and security"
+  description="Get help with BGOBS, report a reproducible bug, or disclose a security issue through the appropriate private channel."
+  canonical={joinURL(PRODUCTION_BASE_URL, "support")}
+>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">Support &amp; security</p>
+    <h1>Send the right report to the right place</h1>
+    <p class="lede">
+      BGOBS is maintained in public, but sensitive security reports should not
+      be posted in a public issue.
+    </p>
+
+    <div class="grid two-up">
+      <section class="card">
+        <h2>Bug or feature request</h2>
+        <p>
+          Search existing issues first. If the problem is new, open a public
+          issue with concise reproduction steps and the versions involved.
+        </p>
+        <a class="button" href={ISSUES_URL}>Go to GitHub Issues</a>
+      </section>
+
+      <section class="card accent-card">
+        <h2>Security vulnerability</h2>
+        <p>
+          Read the security policy and use its private reporting route. Do not
+          publish exploit details, credentials, device identifiers, or private
+          recordings in a normal issue.
+        </p>
+        <a class="button primary" href={SECURITY_URL}
+          >Read the security policy</a
+        >
+      </section>
+    </div>
+
+    <h2>What to include in a bug report</h2>
+    <ul>
+      <li>BGOBS and OBS Studio versions;</li>
+      <li>operating system and CPU architecture;</li>
+      <li>camera, GPU, or CaCam connection mode when relevant;</li>
+      <li>the smallest sequence that reproduces the problem;</li>
+      <li>relevant OBS log lines after removing sensitive information.</li>
+    </ul>
+
+    <aside class="callout">
+      <p>
+        <strong>CaCam support:</strong> CaCam is a separate private Android product.
+        The BGOBS issue tracker covers the public plugin and its integration surface,
+        not requests for CaCam source code.
+      </p>
+    </aside>
+
+    <h2>AI-assisted contributions</h2>
+    <p>
+      Project code or documentation may use AI assistance. Contributors and
+      maintainers remain responsible for human review, testing, licensing,
+      security, and factual accuracy. Material assistance should be disclosed so
+      reviewers can assess provenance and risk.
+    </p>
+    <p>
+      Read the repository's
+      <a href={GENERATED_CONTENT_URL}>generated-content disclosure</a>.
+    </p>
+
+    <nav class="page-nav" aria-label="Page navigation">
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+      <a href={GITHUB_URL}>GitHub repository</a>
+    </nav>
+  </main>
+</Layout>

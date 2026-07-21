@@ -10,5 +10,5 @@
   <choice id="default" title="@CMAKE_PROJECT_NAME@" visible="false">
     <pkg-ref id="@PLUGIN_BUNDLE_ID@"/>
   </choice>
-  <pkg-ref id="@PLUGIN_BUNDLE_ID@" version="@PLUGIN_VERSION@" onConclusion="none" auth="none">component.pkg</pkg-ref>
+  <pkg-ref id="@PLUGIN_BUNDLE_ID@" version="@PLUGIN_PACKAGE_VERSION@" onConclusion="none" auth="none">component.pkg</pkg-ref>
 </installer-gui-script>

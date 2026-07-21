@@ -1,95 +1,100 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { joinURL, withTrailingSlash } from "ufo";
-import { Octokit, type RestEndpointMethodTypes } from "@octokit/rest";
 
 import { Code } from "astro:components";
 
 import Layout from "../layouts/Layout.astro";
-
-import { GITHUB_OWNER, GITHUB_REPO, PRODUCTION_BASE_URL } from "../lib/info.js";
-
-export type LatestRelease =
-  RestEndpointMethodTypes["repos"]["getLatestRelease"]["response"]["data"];
+import { PRODUCTION_BASE_URL } from "../lib/info.js";
+import {
+  ASSET_PATTERNS,
+  findAsset,
+  getLatestBgobsRelease,
+} from "../lib/releases.js";
 
 const { BASE_URL } = import.meta.env;
-
-async function getLatestRelease(): Promise<LatestRelease> {
-  const octokit = new Octokit({ auth: import.meta.env.GITHUB_TOKEN });
-
-  const latestRelease = await octokit.rest.repos.getLatestRelease({
-    owner: GITHUB_OWNER,
-    repo: GITHUB_REPO,
-  });
-
-  return latestRelease.data;
-}
-
-const release = await getLatestRelease();
-
-const asset = release.assets.find((e) => /x86_64-linux-gnu\.deb/.test(e.name));
-const downloadUrl = asset?.browser_download_url ?? release.html_url;
+const release = await getLatestBgobsRelease();
+const asset = findAsset(release, ASSET_PATTERNS.ubuntu);
+const releaseDetails = withTrailingSlash(
+  joinURL(BASE_URL, "versions", release.tag_name),
+);
 ---
 
-<Layout lang="en" title="How to use OBS Background Removal on Ubuntu">
-  <Fragment slot="head-info">
-    <meta
-      name="description"
-      content="How to use OBS Background Removal on Ubuntu"
-    />
-    <link
-      rel="canonical"
-      href={withTrailingSlash(joinURL(PRODUCTION_BASE_URL, "ubuntu"))}
-    />
-  </Fragment>
+<Layout
+  lang="en"
+  title="Install BGOBS on Ubuntu"
+  description="Check for and install an official BGOBS x86_64 Debian package for OBS Studio on Ubuntu."
+  canonical={joinURL(PRODUCTION_BASE_URL, "ubuntu")}
+>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">Ubuntu x86_64</p>
+    <h1>Install BGOBS on Ubuntu</h1>
+    <p class="lede">
+      Install only the Debian package attached to the official BGOBS GitHub
+      release. Third-party packages carrying a similar filter name are not BGOBS
+      builds.
+    </p>
 
-  <main class="white-box">
-    <h1>Download and install on Ubuntu</h1>
+    {
+      asset ? (
+        <>
+          <div class="button-row">
+            <a
+              class="button primary"
+              href={asset.browser_download_url}
+              download
+            >
+              Download {asset.name}
+            </a>
+            <a class="button" href={releaseDetails}>
+              Verify this download
+            </a>
+          </div>
 
-    <ol>
-      <li>
-        <strong>Download the Plugin (.deb):</strong><br />
-        <a href={downloadUrl} download={asset !== undefined}>
-          Click here to download the latest Ubuntu package (DEB)
-        </a>
-      </li>
-      <li>
-        <strong>Install the Plugin:</strong><br />
-        <ul>
-          <li>
-            <strong>Option 1: Using the GUI</strong><br />
-            Double-click the downloaded <code>.deb</code> file and follow the prompts
-            in your software installer.
-          </li>
-          <li>
-            <strong>Option 2: Using the Terminal</strong><br />
-            Open a terminal in the folder where you downloaded the file and run:<br
-            />
-            <Code
-              code={`sudo dpkg -i ./obs-backgroundremoval_*_x86_64-linux-gnu.deb
-sudo apt-get install -f`}
-              lang="bash"
-            />
-          </li>
-        </ul>
-      </li>
-      <li>
-        <strong>Restart OBS Studio:</strong><br />
-        If OBS Studio is running, close it and open it again.
-      </li>
-      <li>
-        <strong>Usage:</strong><br />
-        See the <a href={joinURL(BASE_URL, "usage/")}>usage page</a> for how to use
-        the plugin.
-      </li>
-    </ol>
+          <ol>
+            <li>Close OBS Studio.</li>
+            <li>
+              Download <code>{asset.name}</code> from the button above.
+            </li>
+            <li>
+              Open a terminal in the download directory and let APT install the
+              local package and resolve its declared dependencies:
+              <Code code={"sudo apt install ./" + asset.name} lang="bash" />
+            </li>
+            <li>Start OBS Studio again, then follow the usage guide.</li>
+          </ol>
+        </>
+      ) : (
+        <aside class="callout">
+          <p>
+            <strong>
+              No Ubuntu package is attached to {release.tag_name}.
+            </strong>{" "}
+            Use the official Releases page to check future builds. BGOBS does
+            not currently endorse an AUR, Flatpak, or other third-party package
+            as a substitute.
+          </p>
+          <p>
+            <a href={release.html_url}>Open the official GitHub release</a>
+          </p>
+        </aside>
+      )
+    }
 
-    <p>All set!</p>
+    <h2>Next step</h2>
+    <p>
+      Open <a href={joinURL(BASE_URL, "usage/")}>Use BGOBS</a> to add the effect filter
+      or an optional CaCam source.
+    </p>
 
-    <p><a href={joinURL(BASE_URL, "/")}>Back to the top page</a></p>
+    <nav class="page-nav" aria-label="Page navigation">
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+      <a href={release.html_url}>Official GitHub release</a>
+    </nav>
   </main>
 </Layout>

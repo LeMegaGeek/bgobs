@@ -1,173 +1,114 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { joinURL, withTrailingSlash } from "ufo";
-import { Octokit, type RestEndpointMethodTypes } from "@octokit/rest";
 
 import Layout from "../layouts/Layout.astro";
-
+import { PRODUCTION_BASE_URL } from "../lib/info.js";
 import {
-  GITHUB_OWNER,
-  GITHUB_REPO,
-  PRODUCTION_BASE_URL,
-  PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL,
-} from "../lib/info.js";
-
-import GitHubMarkWhite from "../../public/github-mark-white.svg";
-
-export type LatestRelease =
-  RestEndpointMethodTypes["repos"]["getLatestRelease"]["response"]["data"];
+  ASSET_PATTERNS,
+  findAsset,
+  getLatestBgobsRelease,
+} from "../lib/releases.js";
 
 const { BASE_URL } = import.meta.env;
-
-async function getLatestRelease(): Promise<LatestRelease> {
-  const octokit = new Octokit({ auth: import.meta.env.GITHUB_TOKEN });
-
-  const latestRelease = await octokit.rest.repos.getLatestRelease({
-    owner: GITHUB_OWNER,
-    repo: GITHUB_REPO,
-  });
-
-  return latestRelease.data;
-}
-
-const release = await getLatestRelease();
-
-const assetX64 = release.assets.find((e) => /windows-x64\.zip/.test(e.name));
-const downloadUrlX64 = assetX64?.browser_download_url ?? release.html_url;
+const release = await getLatestBgobsRelease();
+const asset = findAsset(release, ASSET_PATTERNS.windows);
+const releaseDetails = withTrailingSlash(
+  joinURL(BASE_URL, "versions", release.tag_name),
+);
 ---
 
-<Layout lang="en" title="Windows Installation Guide - Background Removal">
-  <Fragment slot="head-info">
-    <meta
-      name="description"
-      content="This page describes how Windows users can install the Background Removal plugin into their OBS Studio. Unzip the latest version of the plugin and copy obs-backgroundremoval folder into C:/ProgramData/obs-studio/plugins. Restart OBS Studio and Background Removal and Low-Light Enhancement filters will be available on the list of effect filters on any video sources."
-    />
-    <link
-      rel="canonical"
-      href={withTrailingSlash(joinURL(PRODUCTION_BASE_URL, "windows"))}
-    />
-  </Fragment>
-
-  <main class="white-box">
-    <h1>Windows Installation Guide</h1>
-    <p>How to use our Background Removal plugin on Windows</p>
-
-    <aside
-      class="alert-box prominent"
-      aria-label="Important Notice for Windows Users"
-    >
-      <p>
-        <strong>⚠️ NO Program Files:</strong>
-        DO NOT install OBS plugins under <code>Program Files</code>.
-        <strong>TOTALLY</strong> unsupported and will <strong>BREAK SOON</strong
-        >.
-        <a href="https://obsproject.com/kb/plugins-guide"
-          >OBS Project's Plugins Guide</a
-        >
-      </p>
-    </aside>
-
-    <p>
-      Here we describe how you can install our Background Removal plugin into
-      your OBS Studio on Windows.
+<Layout
+  lang="en"
+  title="Install BGOBS on Windows"
+  description="Download and install the official BGOBS plugin package for 64-bit OBS Studio on Windows."
+  canonical={joinURL(PRODUCTION_BASE_URL, "windows")}
+>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">Windows x64</p>
+    <h1>Install BGOBS on Windows</h1>
+    <p class="lede">
+      Use the ZIP attached to the official BGOBS release. The package keeps the
+      plugin binary, models, USB library, and optional ADB tools together.
     </p>
 
-    <section class="material-button-section">
-      <div class="github-button">
-        <a href={release.html_url} target="_blank" rel="noopener noreferrer">
-          <GitHubMarkWhite viewBox="0 0 98 96" width="24" height="24" />
-          <span>View on GitHub</span>
-        </a>
-      </div>
-      <div class="video-tutorials-button">
-        <a href={PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL}> ▶︎ YouTube Tutorials </a>
-      </div>
-    </section>
+    {
+      asset ? (
+        <>
+          <div class="button-row">
+            <a
+              class="button primary"
+              href={asset.browser_download_url}
+              download
+            >
+              Download {asset.name}
+            </a>
+            <a class="button" href={releaseDetails}>
+              Verify this download
+            </a>
+          </div>
 
-    <h2>Installing version {release.tag_name}</h2>
+          <h2>Standard OBS Studio installation</h2>
+          <ol>
+            <li>Close OBS Studio.</li>
+            <li>
+              Extract <code>{asset.name}</code> to a temporary folder.
+            </li>
+            <li>
+              Copy the extracted <code>bgobs</code> folder into{" "}
+              <code>C:\ProgramData\obs-studio\plugins\</code>.
+            </li>
+            <li>
+              Confirm that{" "}
+              <code>
+                C:\ProgramData\obs-studio\plugins\bgobs\bin\64bit\bgobs.dll
+              </code>{" "}
+              exists. Keep the packaged support files beside the plugin; do not
+              move individual DLLs into another plugin's folder.
+            </li>
+            <li>Start OBS Studio again, then follow the usage guide.</li>
+          </ol>
 
-    <ol>
-      <li>
-        <strong>Download ZIP:</strong> The latest release of our plugin is {
-          release.tag_name
-        }.<br />
-        Please download our plugin from the GitHub Release of version {
-          release.tag_name
-        }.<br />
-        <dl>
-          <dt>
-            <strong>📝 The {release.tag_name} release page on GitHub:</strong>
-          </dt>
-          <dd><a href={release.html_url}>{release.html_url}</a></dd>
-          <dt><strong>⬇️ Direct download link for Windows x64 ZIP:</strong></dt>
-          <dd>
-            <a href={downloadUrlX64}>{downloadUrlX64}</a>
-          </dd>
-        </dl>
-      </li>
-      <li>
-        <strong>Extract ZIP File:</strong><br />
-        The ZIP file you downloaded has some files and a folder named <code
-          >obs-backgroundremoval</code
-        >. This folder is the bundle of our plugin, and you need to place this
-        folder where your OBS Studio can find it. Please read README.txt in the
-        ZIP file and follow the instructions to install our plugin.
-      </li>
-      <li>
-        <strong
-          >Place obs-backgroundremoval Folder into
-          C:/ProgramData/obs-studio/plugins</strong
-        ><br />
-        <dl>
-          <dt><strong>📝 How to install plugin on Windows.txt:</strong></dt>
-          <dd>
-            A text file to guide you through the installation process on
-            Windows.
-          </dd>
-          <dt><strong>⤵️ Install Into Here:</strong></dt>
-          <dd>A shortcut to <code>C:/ProgramData/obs-studio/plugins</code>.</dd>
-          <dt><strong>📂 obs-backgroundremoval:</strong></dt>
-          <dd>The plugin itself.</dd>
-        </dl>
-        ProgramData is a system folder that stores application data such as databases
-        and plugins. To open this folder, press <kbd>Win + R</kbd>, and type <code
-          >C:/ProgramData</code
-        >, then press Enter. File Explorer will open in ProgramData. In this
-        folder, please create a
-        <code>obs-studio/plugins</code> subfolder and place the <code
-          >obs-backgroundremoval</code
-        > folder inside it. When you finish this step, you have <code
-          >C:/ProgramData/obs-studio/plugins/obs-backgroundremoval</code
-        >.
-      </li>
-      <li>
-        <strong>Restart OBS Studio:</strong><br />
-        Once you have installed a new plugin into OBS Studio, you need to restart
-        OBS Studio for these changes to take effect. Open the effect filters list
-        of any video sources to check if there are Background Removal and Low-Light
-        Enhancement filters available.
-      </li>
-      <li>
-        <strong
-          >Set up our plugin as described in <a
-            href={withTrailingSlash(joinURL(BASE_URL, "usage/"))}>Usage page</a
-          ></strong
-        >:<br />
-        Background Removal and Low-Light Enhancement filters can be applied to any
-        video sources or groups in OBS Studio. If you don't see any of our filters,
-        please check the Plugin Manager in the Tools menu.
-        <a href="https://github.com/royshil/obs-backgroundremoval/discussions"
-          >GitHub Discussions</a
-        > may be helpful to solve your problem as well.
-      </li>
-    </ol>
+          <aside class="callout">
+            <p>
+              <strong>Do not copy this package into Program Files.</strong> The
+              ZIP is laid out for OBS Studio's system plugin directory under{" "}
+              <code>ProgramData</code>. Portable OBS installations should follow
+              the text instructions bundled in the ZIP because their root path
+              varies.
+            </p>
+          </aside>
+        </>
+      ) : (
+        <aside class="callout">
+          <p>
+            <strong>
+              No Windows runtime ZIP is attached to {release.tag_name}.
+            </strong>{" "}
+            Check the official release page instead of downloading a package
+            published under another plugin name.
+          </p>
+          <p>
+            <a href={release.html_url}>Open {release.tag_name} on GitHub</a>
+          </p>
+        </aside>
+      )
+    }
 
+    <h2>Next step</h2>
     <p>
-      <a href={joinURL(BASE_URL, "/")}>Back to the top page</a>
+      Open <a href={joinURL(BASE_URL, "usage/")}>Use BGOBS</a> to add the effect filter
+      or an optional CaCam source.
     </p>
+
+    <nav class="page-nav" aria-label="Page navigation">
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+      <a href={release.html_url}>Official GitHub release</a>
+    </nav>
   </main>
 </Layout>

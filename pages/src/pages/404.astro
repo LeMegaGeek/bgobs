@@ -11,13 +11,16 @@ import Layout from "../layouts/Layout.astro";
 const { BASE_URL } = import.meta.env;
 ---
 
-<Layout lang="en" title="404 Not Found">
-  <Fragment slot="head-info">
-    <meta name="description" content="404 Not Found" />
-  </Fragment>
-
-  <main class="white-box">
-    <h1>404 Not Found</h1>
-    <a href={joinURL(BASE_URL, "/")}>Back to the top page</a>
+<Layout
+  lang="en"
+  title="Page not found"
+  description="The requested BGOBS page could not be found."
+  noindex
+>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">404</p>
+    <h1>That page is not here</h1>
+    <p>The link may be outdated, or the page may have moved.</p>
+    <a class="button primary" href={joinURL(BASE_URL, "/")}>Go to BGOBS home</a>
   </main>
 </Layout>

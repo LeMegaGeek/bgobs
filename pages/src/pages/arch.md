@@ -1,38 +1,26 @@
 ---
 # SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 # SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+# SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 layout: ../layouts/MarkdownLayout.astro
 pathname: arch
 lang: en
-title: How to use OBS Background Removal on Arch Linux
-description: How to use OBS Background Removal on Arch Linux
+title: BGOBS and Arch Linux
+description: BGOBS does not currently publish or endorse an Arch Linux or AUR package.
 ---
 
-# Download and Install on Arch Linux
+<p class="eyebrow">Distribution status</p>
 
-You can install OBS Background Removal from the AUR.
+# No official BGOBS Arch package
 
-```sh
-git clone https://aur.archlinux.org/obs-backgroundremoval.git
-cd obs-backgroundremoval
-makepkg -si
-```
+BGOBS does not currently publish or endorse an Arch Linux or AUR package. A
+package with a similar filter name may belong to another project and should not
+be treated as a BGOBS build.
 
-You can also install the git version:
-
-```sh
-git clone https://aur.archlinux.org/obs-backgroundremoval-git.git
-cd obs-backgroundremoval-git
-makepkg -si
-```
-
-Or use any AUR helper, like yay:
-
-```sh
-yay -S obs-backgroundremoval
-```
-
-All set!
+Use only BGOBS-branded assets from the
+[official LeMegaGeek Releases](https://github.com/LeMegaGeek/bgobs/releases).
+If no compatible package is listed, no supported Arch download is available for
+that release.

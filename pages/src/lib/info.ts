@@ -7,8 +7,8 @@ export const GITHUB_OWNER = "LeMegaGeek";
 export const GITHUB_REPO = "bgobs";
 export const GITHUB_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`;
 export const PRODUCTION_BASE_URL = "https://lemegageek.github.io/bgobs";
-
-// Official YouTube Course URL owned by umireon (Kaito Udagawa, one of the maintainers)
-// YouTube Course is a special playlist for teaching
-export const PLUGIN_TUTORIAL_YOUTUBE_COURSE_URL =
-  "https://youtube.com/playlist?list=PLfd4SnaQQz_DVr_18OQozucYmiC56rRhy";
+export const RELEASES_URL = `${GITHUB_URL}/releases`;
+export const ISSUES_URL = `${GITHUB_URL}/issues`;
+export const SECURITY_URL = `${GITHUB_URL}/security/policy`;
+export const LICENSE_URL = `${GITHUB_URL}/blob/main/LICENSE`;
+export const GENERATED_CONTENT_URL = `${GITHUB_URL}/blob/main/GENERATED.md`;

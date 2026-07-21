@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -28,6 +29,36 @@ export class FileVerifierResultDialog extends HTMLElement {
     this.attachShadow({ mode: "open" });
 
     this.dialog = document.createElement("dialog");
+    const style = document.createElement("style");
+    style.textContent = `
+      dialog {
+        width: min(38rem, calc(100% - 2rem));
+        max-height: calc(100vh - 2rem);
+        padding: 1.25rem;
+        overflow: auto;
+        border: 1px solid #52627d;
+        border-radius: 1rem;
+        color: #f7f9fc;
+        background: #151c2b;
+        box-shadow: 0 24px 70px rgb(0 0 0 / 55%);
+      }
+      dialog::backdrop { background: rgb(0 0 0 / 72%); }
+      h2 { margin-top: 0; }
+      dt { margin-top: .8rem; font-weight: 750; overflow-wrap: anywhere; }
+      dd { margin-left: 0; color: #dbe3ef; overflow-wrap: anywhere; }
+      button {
+        min-height: 2.6rem;
+        padding: .55rem 1rem;
+        border: 1px solid #ff8a1f;
+        border-radius: .6rem;
+        color: #271100;
+        background: #ffad5c;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 750;
+      }
+      button:focus-visible { outline: 3px solid #55d9ee; outline-offset: 3px; }
+    `;
 
     const h2 = document.createElement("h2");
     h2.textContent = "Verification Results";
@@ -48,7 +79,7 @@ export class FileVerifierResultDialog extends HTMLElement {
     form.appendChild(button);
     this.dialog.appendChild(form);
 
-    this.shadowRoot!.appendChild(this.dialog);
+    this.shadowRoot!.append(style, this.dialog);
   }
 
   connectedCallback() {
@@ -106,6 +137,6 @@ export class FileVerifierResultDialog extends HTMLElement {
   }
 
   public showModal() {
-    this.dialog.showModal();
+    if (!this.dialog.open) this.dialog.showModal();
   }
 }

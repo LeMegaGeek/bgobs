@@ -1,141 +1,89 @@
-# OBS Background Removal – FAQ (Knowledge Base for LLMs)
+# BGOBS frequently asked questions
 
-> **Purpose:**
-> This file is a structured knowledge base for LLMs and AI chat support. Use it to answer user queries about the OBS Background Removal plugin. For interactive help, see: https://royshil.github.io/obs-backgroundremoval/interactive-help/
+## What is BGOBS?
 
----
+BGOBS is an open-source OBS Studio plugin for portrait segmentation,
+background removal or blur, and low-light enhancement. It runs model inference
+locally on the computer hosting OBS.
 
-## 1. Basic Features & Usage
+## Do I need CaCam?
 
-- No green screen required. AI (MODNet, Selfie Segmentation, etc.) removes the background in real time.
-- Works with any video source in OBS, including cameras and video files.
-- Can be applied to multiple sources (CPU usage increases with each).
-- Optimized for single-person foreground segmentation. Accuracy may drop with multiple people or in low-light conditions.
-- Compatible with OBS Virtual Camera. Do not use with other background removal plugins simultaneously.
+No. BGOBS filters work with normal cameras, capture cards, media sources, and
+other OBS video sources. CaCam is a separate, privately developed Android app
+that can provide an optional phone-camera source over direct USB or ADB.
 
-### How to Apply the Filter
-1. Right-click your video source in OBS → "Filters" → "Effect Filters" → Add "Background Removal".
+## How do I add the background filter?
 
-### Customizing the Background
-- Replace the background with any image or video by placing a source below your camera in the scene.
-- Adjust AI model, threshold, and edge smoothing in filter settings.
-- Background blur is available (enable in filter settings).
+Right-click a video source, open **Filters**, and add **Make me look good** under
+**Effect Filters**. The displayed name can differ when OBS uses another locale.
 
----
+## Why is the result transparent?
 
-## 2. Installation (Detailed)
+Background removal outputs transparency so sources lower in the OBS scene can
+show through. Add an image, color, browser, or video source below the camera.
+If the subject is also transparent, enable **Mask preview** and adjust the model,
+threshold, and edge controls.
 
-### Windows
-1. Download the latest Windows ZIP from the [official site](https://royshil.github.io/obs-backgroundremoval/).
-2. Extract the ZIP and copy its contents to your OBS Studio install folder (e.g., `C:\Program Files\obs-studio`).
-3. Restart OBS Studio.
+## Which preset should I use?
 
-[More info](https://royshil.github.io/obs-backgroundremoval/windows/)
+Start with **Natural**. Use **Studio** for a controlled, well-lit setup,
+**Crisp** for a firmer edge, or **Performance** when inference cost matters more
+than fine detail. Soft frontal lighting has a large effect on quality.
 
----
+## Is video uploaded anywhere?
 
-### macOS
-1. Download the latest macOS PKG installer from the [official site](https://royshil.github.io/obs-backgroundremoval/).
-2. Run the PKG installer and follow the instructions.
-3. Restart OBS Studio.
+No. Camera frames, masks, and model inference remain local. The optional update
+check contacts GitHub only when enabled, and the default configuration disables
+it. ADB source mode uses a loopback port created by `adb forward`.
 
-[More info](https://royshil.github.io/obs-backgroundremoval/macos/)
+## Where do I download BGOBS?
 
----
+Use the assets attached to the
+[latest GitHub release](https://github.com/LeMegaGeek/bgobs/releases/latest).
+Only platforms actually listed on that release have a published binary for that
+version. Source builds are documented in [docs/README.md](docs/README.md).
 
-### Ubuntu
-1. Download the latest Ubuntu DEB package from the [official site](https://royshil.github.io/obs-backgroundremoval/).
-2. Install via GUI (double-click `.deb`) or terminal:
-   ```sh
-   sudo dpkg -i ./obs-backgroundremoval_*_x86_64-linux-gnu.deb
-   sudo apt-get install -f
-   ```
-3. Restart OBS Studio.
+## Why does OBS not list the plugin?
 
-[More info](https://royshil.github.io/obs-backgroundremoval/ubuntu/)
+Open **Help → Log Files → View Current Log** and search for `bgobs`. Common
+causes are an incorrect plugin directory, a package for the wrong architecture,
+missing ONNX Runtime libraries, or missing model files. Restart OBS after
+replacing plugin binaries.
 
----
+## Why does the CaCam USB source not connect?
 
-### Flatpak
-1. Run:
-   ```sh
-   flatpak install flathub com.obsproject.Studio.Plugin.BackgroundRemoval
-   ```
-2. Restart OBS Studio.
+- Unlock the Android device and keep CaCam in the foreground for the first
+  frame.
+- Accept Android's accessory permission prompt.
+- On Windows, make sure the active Android accessory interface uses a WinUSB
+  driver and that `libusb-1.0.dll` is next to `bgobs.dll`.
+- Enable detailed USB logs only while diagnosing; logs can contain device
+  identifiers.
 
-[More info](https://royshil.github.io/obs-backgroundremoval/flatpak/)
+Direct USB uses Android Open Accessory, not USB tethering or ADB. See the
+[protocol specification](docs/CACAM-USB-PROTOCOL.md) for interoperability
+details.
 
----
+## Why does ADB mode not connect?
 
-### Arch Linux
-1. From AUR:
-   ```sh
-   git clone https://aur.archlinux.org/obs-backgroundremoval.git
-   cd obs-backgroundremoval
-   makepkg -si
-   ```
-   Or with an AUR helper:
-   ```sh
-   yay -S obs-backgroundremoval
-   ```
-2. Restart OBS Studio.
+- Confirm `adb devices` lists exactly one authorized device, or set its serial
+  in the source properties.
+- Accept the USB-debugging prompt on the device.
+- Confirm the packaged `adb` executable is present or select an explicit ADB
+  path.
+- Check that the configured local port is not already in use.
 
-[More info](https://royshil.github.io/obs-backgroundremoval/arch/)
+## How do I report a bug?
 
----
+Follow [docs/BUG-REPORTING.md](docs/BUG-REPORTING.md). Include an OBS log,
+reproduction steps, operating system, architecture, OBS version, BGOBS version,
+and relevant hardware. Remove stream keys, usernames, device serials, and other
+sensitive data first.
 
-## 3. Uninstallation (Summary)
-
-- **Windows:** Close OBS Studio. Delete `obs-backgroundremoval` from `C:\Program Files\obs-studio\obs-plugins\`. Config: `AppData\Roaming\obs-studio\plugin_config\obs-backgroundremoval`.
-- **macOS:** Close OBS Studio. Delete `obs-backgroundremoval` from `Applications/OBS Studio.app/Contents/Plugins/`. Config: `~/Library/Application Support/obs-studio/plugin_config/obs-backgroundremoval`.
-- **Ubuntu:** `sudo apt-get remove obs-backgroundremoval` or `flatpak uninstall com.obsproject.Studio.Plugin.BackgroundRemoval`. Config: `~/.config/obs-studio/plugin_config/obs-backgroundremoval`.
-- **Arch:** `yay -R obs-backgroundremoval` or similar. Config: same as Ubuntu.
-
----
-
-## 4. Compatibility & Performance
-
-- Supported OS: Windows 11 (x64), macOS 12+, Ubuntu 24.04+
-- OBS Studio 31.1.1 or later required
-- CPU: AVX support required. Multi-core recommended. GPU support is planned for the future.
-- High CPU usage with multiple sources or high resolution. Use lighter models (e.g., SelfieSeg) if needed.
-
-### macOS Architecture Compatibility
-
-- **Apple Silicon (M1/M2/M3/etc.):** Use the Universal binary installer. Intel binaries running via Rosetta2 are **not supported** and will cause crashes.
-- **Intel Macs:** Use the Universal binary installer. Apple Silicon binaries running on Intel are **not supported**.
-- Always ensure your OBS Studio installation matches your Mac's architecture to avoid compatibility issues.
-
----
-
-## 5. Troubleshooting
-
-- **"Failed to load" error:** Missing dependencies or wrong install path. Recheck installation steps.
-- **Black/transparent background:** Check filter settings and source order.
-- **OBS crashes on macOS:** If running on Apple Silicon, ensure you are NOT using an Intel OBS binary via Rosetta2. If on Intel Mac, ensure you are NOT using an Apple Silicon OBS binary. The plugin does not support cross-architecture translation and will crash. Use OBS Studio and the plugin built for your Mac's native architecture.
-- **OBS crashes (other platforms):** Use latest OBS/plugin, remove conflicting plugins, report with OBS log on GitHub if needed.
-- **"Cannot find model file":** Missing model files. Reinstall the plugin.
-
----
-
-## 6. Security & Privacy
-
-- All processing is local. No video or user data is sent externally. Only version checking may use the internet.
-
----
-
-## 7. Other
-
-- **Bug reports/feature requests:** Use GitHub Issues. Attach OBS log for bug reports.
-- **Contributing:** Star the GitHub repo, give feedback, or contribute code.
-
----
-
-
-[More info](https://royshil.github.io/obs-backgroundremoval/flatpak/)
-
-
+<!--
 SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 
 SPDX-License-Identifier: GPL-3.0-or-later
+-->

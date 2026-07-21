@@ -20,7 +20,10 @@ debian_forky() {
     libobs-dev \
     libonnxruntime-dev \
     libopencv-dev \
+    libopencv-imgcodecs-dev \
+    libusb-1.0-0 \
     ninja-build \
+    python3 \
     tar \
     unzip \
     zip
@@ -39,7 +42,10 @@ ubuntu_resolute() {
     libobs-dev \
     libonnxruntime-dev \
     libopencv-dev \
+    libopencv-imgcodecs-dev \
+    libusb-1.0-0 \
     ninja-build \
+    python3 \
     tar \
     unzip \
     zip
@@ -59,10 +65,16 @@ Darwin)
     # shellcheck disable=SC1091
     . /etc/os-release
 
-    case "$ID" in
+    linux_family=""
+    case " ${ID:-} ${ID_LIKE:-} " in
+    *" ubuntu "*) linux_family=ubuntu ;;
+    *" debian "*) linux_family=debian ;;
+    esac
+
+    case "$linux_family" in
     debian)
-      case "$VERSION_CODENAME" in
-      forky)
+      case "${VERSION_CODENAME:-}" in
+      trixie | forky)
         debian_forky
         exit 0
         ;;
@@ -73,8 +85,8 @@ Darwin)
       esac
       ;;
     ubuntu)
-      case "$VERSION_CODENAME" in
-      resolute)
+      case "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}" in
+      noble | resolute)
         ubuntu_resolute
         exit 0
         ;;

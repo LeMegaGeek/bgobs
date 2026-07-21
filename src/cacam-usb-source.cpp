@@ -11,25 +11,38 @@
 #include <obs-module.h>
 #include <util/platform.h>
 
+#include <curl/curl.h>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <cstdarg>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <iterator>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -145,6 +158,56 @@ constexpr int BULK_TIMEOUT_MS = 1000;
 constexpr int CONTROL_TIMEOUT_MS = 1000;
 constexpr int RETRY_DELAY_MS = 1200;
 constexpr int NO_DATA_WARNING_MS = 5000;
+constexpr int ADB_LOCAL_PORT_DEFAULT = 18080;
+constexpr int ADB_DEVICE_PORT_DEFAULT = 8080;
+constexpr int ADB_SNAPSHOT_TIMEOUT_MS = 1200;
+constexpr int ADB_HEALTH_TIMEOUT_MS = 800;
+constexpr int ADB_HEALTH_RETRY_COUNT = 30;
+constexpr int ADB_COMMAND_TIMEOUT_MS = 30000;
+constexpr size_t MAX_ADB_COMMAND_OUTPUT_SIZE = 1024 * 1024;
+constexpr size_t MAX_HEALTH_RESPONSE_SIZE = 4 * 1024;
+constexpr size_t MAX_SNAPSHOT_RESPONSE_SIZE = 16 * 1024 * 1024;
+constexpr const char *CACAM_PACKAGE_NAME = "fr.lemegageek.cacam";
+constexpr uint32_t DEFAULT_SOURCE_WIDTH = 1280;
+constexpr uint32_t DEFAULT_SOURCE_HEIGHT = 720;
+
+std::pair<uint32_t, uint32_t> source_canvas_size()
+{
+	struct obs_video_info video_info = {};
+	if (obs_get_video_info(&video_info) && video_info.base_width > 0 && video_info.base_height > 0)
+		return {video_info.base_width, video_info.base_height};
+	return {DEFAULT_SOURCE_WIDTH, DEFAULT_SOURCE_HEIGHT};
+}
+
+enum class CacamConnectionMode {
+	Usb,
+	Adb,
+};
+
+enum class CacamQuality {
+	Pourri,
+	Low,
+	Standard,
+	Hd,
+	Uhd,
+};
+
+struct CacamQualityInfo {
+	CacamQuality quality;
+	const char *setting;
+	const char *intent_value;
+	uint32_t width;
+	uint32_t height;
+	int fps;
+};
+
+constexpr CacamQualityInfo QUALITY_INFOS[] = {
+	{CacamQuality::Pourri, "pourri", "Pourri", 426, 240, 8},
+	{CacamQuality::Low, "low", "Low", 640, 360, 12},
+	{CacamQuality::Standard, "standard", "Standard", 854, 480, 12},
+	{CacamQuality::Hd, "hd", "Hd", 1920, 1080, 20},
+	{CacamQuality::Uhd, "uhd", "Uhd", 3840, 2160, 15},
+};
 
 struct UsbApi {
 #ifdef _WIN32
@@ -186,10 +249,20 @@ struct UsbApi {
 		}
 		if (!library)
 			library = LoadLibraryA("libusb-1.0.dll");
+#elif defined(__APPLE__)
+		const std::string directory = module_directory();
+		if (!directory.empty()) {
+			const std::string bundled = directory + "/../Frameworks/libusb-1.0.dylib";
+			library = dlopen(bundled.c_str(), RTLD_NOW | RTLD_LOCAL);
+		}
+		if (!library)
+			library = dlopen("/opt/homebrew/lib/libusb-1.0.dylib", RTLD_NOW | RTLD_LOCAL);
+		if (!library)
+			library = dlopen("/usr/local/lib/libusb-1.0.dylib", RTLD_NOW | RTLD_LOCAL);
+		if (!library)
+			library = dlopen("/opt/local/lib/libusb-1.0.dylib", RTLD_NOW | RTLD_LOCAL);
 #else
 		library = dlopen("libusb-1.0.so.0", RTLD_NOW | RTLD_LOCAL);
-		if (!library)
-			library = dlopen("libusb-1.0.dylib", RTLD_NOW | RTLD_LOCAL);
 #endif
 		if (!library)
 			return false;
@@ -236,9 +309,10 @@ struct UsbApi {
 		return target != nullptr;
 	}
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 	static std::string module_directory()
 	{
+#ifdef _WIN32
 		HMODULE module = nullptr;
 		if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
 						GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -252,6 +326,13 @@ struct UsbApi {
 			return {};
 
 		std::string value(path, length);
+#else
+		Dl_info info = {};
+		if (dladdr(reinterpret_cast<const void *>(&PLUGIN_VERSION), &info) == 0 || !info.dli_fname)
+			return {};
+
+		std::string value(info.dli_fname);
+#endif
 		const size_t separator = value.find_last_of("\\/");
 		return separator == std::string::npos ? std::string{} : value.substr(0, separator);
 	}
@@ -280,6 +361,18 @@ struct AccessoryConnection {
 	}
 };
 
+bool is_aoa_accessory_interface(const libusb_interface_descriptor &descriptor)
+{
+	return descriptor.bInterfaceClass == 0xff && descriptor.bInterfaceSubClass == 0xff &&
+	       descriptor.bInterfaceProtocol == 0x00;
+}
+
+bool is_adb_interface(const libusb_interface_descriptor &descriptor)
+{
+	return descriptor.bInterfaceClass == 0xff && descriptor.bInterfaceSubClass == 0x42 &&
+	       descriptor.bInterfaceProtocol == 0x01;
+}
+
 bool is_aoa_product(uint16_t vendor, uint16_t product)
 {
 	if (vendor != GOOGLE_VENDOR_ID)
@@ -305,8 +398,7 @@ bool has_video_interface(UsbApi &api, libusb_device *device)
 		return false;
 
 	bool found = false;
-	for (uint8_t interface_index = 0; interface_index < config->bNumInterfaces && !found;
-	     ++interface_index) {
+	for (uint8_t interface_index = 0; interface_index < config->bNumInterfaces && !found; ++interface_index) {
 		const libusb_interface &interface = config->interface[interface_index];
 		for (int alt_index = 0; alt_index < interface.num_altsetting; ++alt_index) {
 			if (interface.altsetting[alt_index].bInterfaceClass == LIBUSB_CLASS_VIDEO) {
@@ -339,6 +431,383 @@ uint64_t read_u64_be(const unsigned char *data)
 	return value;
 }
 
+#ifdef _WIN32
+std::string plugin_module_directory()
+{
+	HMODULE module = nullptr;
+	if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+				reinterpret_cast<LPCSTR>(&plugin_module_directory), &module)) {
+		return {};
+	}
+
+	char path[MAX_PATH] = {};
+	const DWORD length = GetModuleFileNameA(module, path, static_cast<DWORD>(sizeof(path)));
+	if (length == 0 || length >= sizeof(path))
+		return {};
+
+	std::string value(path, length);
+	const size_t separator = value.find_last_of("\\/");
+	return separator == std::string::npos ? std::string{} : value.substr(0, separator);
+}
+#endif
+
+std::string default_adb_path()
+{
+#ifdef _WIN32
+	const std::string directory = plugin_module_directory();
+	if (!directory.empty()) {
+		const std::string bundled = directory + "\\adb\\adb.exe";
+		const DWORD attributes = GetFileAttributesA(bundled.c_str());
+		if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+			return bundled;
+	}
+	return "adb.exe";
+#else
+	return "adb";
+#endif
+}
+
+CacamConnectionMode parse_connection_mode(const char *value)
+{
+	const std::string mode = value ? value : "";
+	if (mode == "adb")
+		return CacamConnectionMode::Adb;
+	return CacamConnectionMode::Usb;
+}
+
+const char *connection_mode_setting(CacamConnectionMode mode)
+{
+	return mode == CacamConnectionMode::Adb ? "adb" : "usb";
+}
+
+const CacamQualityInfo &quality_info(CacamQuality quality)
+{
+	for (const CacamQualityInfo &info : QUALITY_INFOS) {
+		if (info.quality == quality)
+			return info;
+	}
+	return QUALITY_INFOS[2];
+}
+
+CacamQuality parse_quality(const char *value)
+{
+	const std::string setting = value ? value : "";
+	for (const CacamQualityInfo &info : QUALITY_INFOS) {
+		if (setting == info.setting)
+			return info.quality;
+	}
+	return CacamQuality::Standard;
+}
+
+std::string obs_data_string(obs_data_t *settings, const char *name)
+{
+	const char *value = obs_data_get_string(settings, name);
+	return value ? value : "";
+}
+
+std::string shell_quote(const std::string &value)
+{
+#ifdef _WIN32
+	std::string quoted = "\"";
+	for (const char character : value) {
+		if (character == '"')
+			quoted += "\\\"";
+		else
+			quoted += character;
+	}
+	quoted += "\"";
+	return quoted;
+#else
+	std::string quoted = "'";
+	for (const char character : value) {
+		if (character == '\'')
+			quoted += "'\\''";
+		else
+			quoted += character;
+	}
+	quoted += "'";
+	return quoted;
+#endif
+}
+
+std::string run_command_capture(const std::string &command, int *exit_code = nullptr,
+				const std::atomic<bool> *stop_requested = nullptr)
+{
+	std::string output;
+#ifdef _WIN32
+	SECURITY_ATTRIBUTES security_attributes = {};
+	security_attributes.nLength = sizeof(security_attributes);
+	security_attributes.bInheritHandle = TRUE;
+
+	HANDLE read_pipe = nullptr;
+	HANDLE write_pipe = nullptr;
+	if (!CreatePipe(&read_pipe, &write_pipe, &security_attributes, 0)) {
+		if (exit_code)
+			*exit_code = static_cast<int>(GetLastError());
+		return output;
+	}
+	SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
+
+	STARTUPINFOA startup_info = {};
+	startup_info.cb = sizeof(startup_info);
+	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+	startup_info.hStdOutput = write_pipe;
+	startup_info.hStdError = write_pipe;
+	startup_info.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+	startup_info.wShowWindow = SW_HIDE;
+
+	PROCESS_INFORMATION process_info = {};
+	std::vector<char> command_line(command.begin(), command.end());
+	command_line.push_back('\0');
+
+	if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr,
+			    &startup_info, &process_info)) {
+		const DWORD error = GetLastError();
+		CloseHandle(write_pipe);
+		CloseHandle(read_pipe);
+		if (exit_code)
+			*exit_code = static_cast<int>(error);
+		output = "CreateProcess failed with Windows error " + std::to_string(error);
+		return output;
+	}
+
+	CloseHandle(write_pipe);
+
+	std::array<char, 512> buffer = {};
+	bool timed_out = false;
+	bool cancelled = false;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ADB_COMMAND_TIMEOUT_MS);
+	for (;;) {
+		DWORD available = 0;
+		if (!PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &available, nullptr))
+			break;
+
+		while (available > 0) {
+			DWORD bytes_read = 0;
+			const DWORD to_read = std::min<DWORD>(static_cast<DWORD>(buffer.size()), available);
+			if (!ReadFile(read_pipe, buffer.data(), to_read, &bytes_read, nullptr) || bytes_read == 0)
+				break;
+			const size_t remaining = MAX_ADB_COMMAND_OUTPUT_SIZE - output.size();
+			output.append(buffer.data(), std::min<size_t>(bytes_read, remaining));
+			available -= bytes_read;
+		}
+
+		if (WaitForSingleObject(process_info.hProcess, 0) == WAIT_OBJECT_0) {
+			if (!PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &available, nullptr) || available == 0)
+				break;
+			continue;
+		}
+
+		if ((stop_requested && stop_requested->load()) || std::chrono::steady_clock::now() >= deadline) {
+			cancelled = stop_requested && stop_requested->load();
+			timed_out = !cancelled;
+			TerminateProcess(process_info.hProcess, 1460);
+			WaitForSingleObject(process_info.hProcess, 1000);
+			break;
+		}
+
+		Sleep(25);
+	}
+
+	WaitForSingleObject(process_info.hProcess, INFINITE);
+	DWORD process_exit_code = 0;
+	GetExitCodeProcess(process_info.hProcess, &process_exit_code);
+	CloseHandle(process_info.hThread);
+	CloseHandle(process_info.hProcess);
+	CloseHandle(read_pipe);
+
+	if (timed_out)
+		output += "Command timed out";
+	if (cancelled)
+		output += "Command cancelled";
+	if (exit_code)
+		*exit_code = cancelled ? -3 : (timed_out ? -2 : static_cast<int>(process_exit_code));
+	return output;
+#else
+	int output_pipe[2] = {-1, -1};
+	if (pipe(output_pipe) != 0) {
+		if (exit_code)
+			*exit_code = -1;
+		return output;
+	}
+
+	const pid_t child = fork();
+	if (child < 0) {
+		close(output_pipe[0]);
+		close(output_pipe[1]);
+		if (exit_code)
+			*exit_code = -1;
+		return output;
+	}
+
+	if (child == 0) {
+		close(output_pipe[0]);
+		setpgid(0, 0);
+		if (dup2(output_pipe[1], STDOUT_FILENO) < 0 || dup2(output_pipe[1], STDERR_FILENO) < 0)
+			_exit(126);
+		close(output_pipe[1]);
+		execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char *>(nullptr));
+		_exit(127);
+	}
+
+	close(output_pipe[1]);
+	setpgid(child, child);
+	const int current_flags = fcntl(output_pipe[0], F_GETFL, 0);
+	if (current_flags >= 0)
+		fcntl(output_pipe[0], F_SETFL, current_flags | O_NONBLOCK);
+
+	std::array<char, 512> buffer = {};
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ADB_COMMAND_TIMEOUT_MS);
+	bool pipe_closed = false;
+	bool child_exited = false;
+	bool timed_out = false;
+	bool cancelled = false;
+	int child_status = 0;
+
+	while (!child_exited || !pipe_closed) {
+		for (;;) {
+			const ssize_t bytes_read = read(output_pipe[0], buffer.data(), buffer.size());
+			if (bytes_read > 0) {
+				const size_t remaining = MAX_ADB_COMMAND_OUTPUT_SIZE - output.size();
+				output.append(buffer.data(), std::min<size_t>(static_cast<size_t>(bytes_read), remaining));
+				continue;
+			}
+			if (bytes_read == 0)
+				pipe_closed = true;
+			else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+				pipe_closed = true;
+			break;
+		}
+
+		if (!child_exited) {
+			const pid_t wait_result = waitpid(child, &child_status, WNOHANG);
+			if (wait_result == child)
+				child_exited = true;
+		}
+		if (child_exited && pipe_closed)
+			break;
+
+		cancelled = stop_requested && stop_requested->load();
+		timed_out = !cancelled && std::chrono::steady_clock::now() >= deadline;
+		if (cancelled || timed_out) {
+			kill(-child, SIGTERM);
+			for (int attempt = 0; attempt < 20; ++attempt) {
+				if (waitpid(child, &child_status, WNOHANG) == child) {
+					child_exited = true;
+					break;
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(25));
+			}
+			if (!child_exited) {
+				kill(-child, SIGKILL);
+				while (waitpid(child, &child_status, 0) < 0 && errno == EINTR) {
+				}
+				child_exited = true;
+			}
+			continue;
+		}
+
+		pollfd descriptor = {output_pipe[0], POLLIN | POLLHUP, 0};
+		poll(&descriptor, 1, 25);
+	}
+
+	close(output_pipe[0]);
+	if (!child_exited) {
+		while (waitpid(child, &child_status, 0) < 0 && errno == EINTR) {
+		}
+	}
+
+	if (exit_code) {
+		if (cancelled)
+			*exit_code = -3;
+		else if (timed_out)
+			*exit_code = -2;
+		else if (WIFEXITED(child_status))
+			*exit_code = WEXITSTATUS(child_status);
+		else if (WIFSIGNALED(child_status))
+			*exit_code = 128 + WTERMSIG(child_status);
+		else
+			*exit_code = -1;
+	}
+	return output;
+#endif
+}
+
+std::string adb_command(const std::string &adb_path, const std::string &serial, const std::string &arguments)
+{
+	std::string command = shell_quote(adb_path.empty() ? default_adb_path() : adb_path);
+	if (!serial.empty())
+		command += " -s " + shell_quote(serial);
+	if (!arguments.empty())
+		command += " " + arguments;
+	return command;
+}
+
+std::vector<std::string> adb_device_serials(const std::string &devices_output)
+{
+	std::vector<std::string> serials;
+	std::istringstream stream(devices_output);
+	std::string line;
+	while (std::getline(stream, line)) {
+		if (line.find("\tdevice") == std::string::npos)
+			continue;
+		const size_t separator = line.find_first_of(" \t");
+		if (separator == std::string::npos || separator == 0)
+			continue;
+		serials.push_back(line.substr(0, separator));
+	}
+	return serials;
+}
+
+struct CurlResponseBuffer {
+	std::vector<unsigned char> *output = nullptr;
+	size_t limit = 0;
+};
+
+size_t curl_write_vector(void *contents, size_t size, size_t nmemb, void *user_data)
+{
+	if (size != 0 && nmemb > SIZE_MAX / size)
+		return 0;
+	const size_t byte_count = size * nmemb;
+	auto *buffer = static_cast<CurlResponseBuffer *>(user_data);
+	if (!buffer || !buffer->output || byte_count > buffer->limit - buffer->output->size())
+		return 0;
+	const auto *bytes = static_cast<unsigned char *>(contents);
+	buffer->output->insert(buffer->output->end(), bytes, bytes + byte_count);
+	return byte_count;
+}
+
+bool http_get_binary(const std::string &url, long timeout_ms, size_t response_limit,
+		     std::vector<unsigned char> &response)
+{
+	static std::once_flag curl_init_flag;
+	static CURLcode curl_init_result = CURLE_FAILED_INIT;
+	std::call_once(curl_init_flag, [] { curl_init_result = curl_global_init(CURL_GLOBAL_DEFAULT); });
+	if (curl_init_result != CURLE_OK || response_limit == 0)
+		return false;
+
+	CURL *curl = curl_easy_init();
+	if (!curl)
+		return false;
+
+	response.clear();
+	CurlResponseBuffer buffer = {&response, response_limit};
+	const std::string user_agent = std::string(PLUGIN_NAME) + "/" + PLUGIN_VERSION;
+	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_vector);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeout_ms);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+	const CURLcode code = curl_easy_perform(curl);
+	long http_code = 0;
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+	curl_easy_cleanup(curl);
+	return code == CURLE_OK && http_code >= 200 && http_code < 300 && !response.empty();
+}
+
 int send_aoa_string(UsbApi &api, libusb_device_handle *handle, uint16_t index, const char *value)
 {
 	std::vector<unsigned char> bytes(std::strlen(value) + 1);
@@ -361,6 +830,22 @@ struct AccessoryRequestResult {
 	uint16_t product = 0;
 	uint16_t protocol = 0;
 	int error = 0;
+};
+
+enum class AccessoryOpenStatus {
+	NotFound,
+	Opened,
+	OpenFailed,
+	AccessoryInterfaceInaccessible,
+};
+
+struct AccessoryOpenResult {
+	AccessoryOpenStatus status = AccessoryOpenStatus::NotFound;
+	uint16_t vendor = 0;
+	uint16_t product = 0;
+	int interface_number = -1;
+	int error = 0;
+	bool saw_adb_interface = false;
 };
 
 bool is_likely_android_vendor(uint16_t vendor)
@@ -420,11 +905,7 @@ AccessoryRequestResult request_accessory_mode(UsbApi &api, libusb_device *device
 	request.protocol = read_u16_le(version_bytes);
 
 	const char *identifiers[] = {
-		"LeMegaGeek",
-		"CaCam USB",
-		"CaCam direct USB video source",
-		"1.0",
-		"https://lemegageek.github.io/",
+		"LeMegaGeek", "CaCam USB", "CaCam direct USB video source", "1.0", "https://lemegageek.github.io/",
 		"CaCam",
 	};
 	for (uint16_t index = 0; index < std::size(identifiers); ++index) {
@@ -447,18 +928,26 @@ AccessoryRequestResult request_accessory_mode(UsbApi &api, libusb_device *device
 	return request;
 }
 
-bool select_accessory_endpoint(UsbApi &api, libusb_device *device, libusb_device_handle *handle,
-			       AccessoryConnection &connection)
+AccessoryOpenResult select_accessory_endpoint(UsbApi &api, libusb_device *device, libusb_device_handle *handle,
+					      AccessoryConnection &connection)
 {
+	AccessoryOpenResult result = {};
+
 	libusb_config_descriptor *config = nullptr;
 	if (api.get_active_config_descriptor(device, &config) != 0 || !config)
-		return false;
+		return result;
 
-	bool found = false;
-	for (uint8_t interface_index = 0; interface_index < config->bNumInterfaces && !found; ++interface_index) {
+	for (uint8_t interface_index = 0; interface_index < config->bNumInterfaces; ++interface_index) {
 		const libusb_interface &interface = config->interface[interface_index];
-		for (int alt_index = 0; alt_index < interface.num_altsetting && !found; ++alt_index) {
+		for (int alt_index = 0; alt_index < interface.num_altsetting; ++alt_index) {
 			const libusb_interface_descriptor &descriptor = interface.altsetting[alt_index];
+			if (is_adb_interface(descriptor)) {
+				result.saw_adb_interface = true;
+				continue;
+			}
+			if (!is_aoa_accessory_interface(descriptor))
+				continue;
+
 			unsigned char endpoint_in = 0;
 			for (uint8_t endpoint_index = 0; endpoint_index < descriptor.bNumEndpoints; ++endpoint_index) {
 				const libusb_endpoint_descriptor &endpoint = descriptor.endpoint[endpoint_index];
@@ -474,26 +963,35 @@ bool select_accessory_endpoint(UsbApi &api, libusb_device *device, libusb_device
 			const int interface_number = descriptor.bInterfaceNumber;
 			if (api.kernel_driver_active(handle, interface_number) == 1)
 				api.detach_kernel_driver(handle, interface_number);
-			if (api.claim_interface(handle, interface_number) == 0) {
+			const int claim_result = api.claim_interface(handle, interface_number);
+			if (claim_result == 0) {
 				connection.handle = handle;
 				connection.interface_number = interface_number;
 				connection.endpoint_in = endpoint_in;
-				found = true;
+				result.status = AccessoryOpenStatus::Opened;
+				result.interface_number = interface_number;
+				api.free_config_descriptor(config);
+				return result;
 			}
+
+			result.status = AccessoryOpenStatus::AccessoryInterfaceInaccessible;
+			result.interface_number = interface_number;
+			result.error = claim_result;
 		}
 	}
 
 	api.free_config_descriptor(config);
-	return found;
+	return result;
 }
 
-bool open_accessory(UsbApi &api, libusb_context *context, AccessoryConnection &connection)
+AccessoryOpenResult open_accessory(UsbApi &api, libusb_context *context, AccessoryConnection &connection)
 {
 	libusb_device **devices = nullptr;
 	const libusb_ssize_t count = api.get_device_list(context, &devices);
 	if (count < 0)
-		return false;
+		return {};
 
+	AccessoryOpenResult first_failure = {};
 	for (libusb_ssize_t index = 0; index < count; ++index) {
 		libusb_device *device = devices[index];
 		libusb_device_descriptor descriptor = {};
@@ -503,19 +1001,34 @@ bool open_accessory(UsbApi &api, libusb_context *context, AccessoryConnection &c
 		}
 
 		libusb_device_handle *handle = nullptr;
-		if (api.open(device, &handle) != 0 || !handle)
+		const int open_result = api.open(device, &handle);
+		if (open_result != 0 || !handle) {
+			if (first_failure.status == AccessoryOpenStatus::NotFound) {
+				first_failure.status = AccessoryOpenStatus::OpenFailed;
+				first_failure.vendor = descriptor.idVendor;
+				first_failure.product = descriptor.idProduct;
+				first_failure.error = open_result != 0 ? open_result : LIBUSB_ERROR_NO_DEVICE;
+			}
 			continue;
+		}
 
-		if (select_accessory_endpoint(api, device, handle, connection)) {
+		AccessoryOpenResult result = select_accessory_endpoint(api, device, handle, connection);
+		result.vendor = descriptor.idVendor;
+		result.product = descriptor.idProduct;
+		if (result.status == AccessoryOpenStatus::Opened) {
 			api.free_device_list(devices, 1);
-			return true;
+			return result;
+		}
+		if (first_failure.status == AccessoryOpenStatus::NotFound &&
+		    (result.status != AccessoryOpenStatus::NotFound || result.saw_adb_interface)) {
+			first_failure = result;
 		}
 
 		api.close(handle);
 	}
 
 	api.free_device_list(devices, 1);
-	return false;
+	return first_failure;
 }
 
 AccessoryRequestResult request_first_android_accessory(UsbApi &api, libusb_context *context)
@@ -656,32 +1169,61 @@ int read_header(BulkReader &reader, unsigned char *header, size_t size)
 	return reader.read_exact(header + sizeof(magic), size - sizeof(magic));
 }
 
+struct SourceSettings {
+	CacamConnectionMode connection_mode = CacamConnectionMode::Usb;
+	CacamQuality quality = CacamQuality::Standard;
+	bool bgobs_optimized = true;
+	bool auto_connect = true;
+	std::string adb_path = default_adb_path();
+	std::string adb_serial;
+	std::string package_name = CACAM_PACKAGE_NAME;
+	int adb_local_port = ADB_LOCAL_PORT_DEFAULT;
+	int adb_device_port = ADB_DEVICE_PORT_DEFAULT;
+
+	bool operator==(const SourceSettings &) const = default;
+};
+
 class CacamUsbSource {
 public:
 	CacamUsbSource(obs_data_t *settings, obs_source_t *source_) : source(source_)
 	{
 		obs_source_set_async_unbuffered(source, true);
 		update(settings);
-		if (auto_connect)
-			start();
 	}
 
 	~CacamUsbSource() { stop(); }
 
 	void update(obs_data_t *settings)
 	{
-		const bool should_auto_connect = obs_data_get_bool(settings, "auto_connect");
-		auto_connect = should_auto_connect;
-		if (auto_connect)
-			start();
-		else
+		SourceSettings next_settings = read_settings(settings);
+		verbose_logging.store(obs_data_get_bool(settings, "verbose_logging"));
+
+		bool should_restart = false;
+		{
+			std::lock_guard<std::mutex> guard(settings_mutex);
+			should_restart = !(next_settings == current_settings);
+			current_settings = next_settings;
+		}
+
+		if (should_restart)
 			stop();
+
+		if (next_settings.auto_connect) {
+			log_verbose("[CaCam] Auto-connect enabled (%s)",
+				    connection_mode_setting(next_settings.connection_mode));
+			start();
+		} else {
+			log_verbose("[CaCam] Auto-connect disabled");
+			stop();
+		}
 	}
 
 	void activate()
 	{
-		if (auto_connect)
+		if (settings_snapshot().auto_connect) {
+			log_verbose("[CaCam] Source activated");
 			start();
+		}
 	}
 
 	void deactivate()
@@ -689,48 +1231,266 @@ public:
 		// Auto-connect is a device connection policy, not a scene visibility policy.
 		// Keeping the worker alive also avoids losing AOA negotiation while OBS
 		// temporarily deactivates sources during scene loading and Studio Mode.
-		if (!auto_connect)
+		if (!settings_snapshot().auto_connect)
 			stop();
 	}
 
-	uint32_t get_width() const { return width.load(); }
-	uint32_t get_height() const { return height.load(); }
+	uint32_t get_width() const { return source_canvas_size().first; }
+	uint32_t get_height() const { return source_canvas_size().second; }
 
 private:
 	obs_source_t *source = nullptr;
 	std::thread worker;
 	std::mutex worker_mutex;
+	mutable std::mutex settings_mutex;
 	std::atomic<bool> stop_requested{false};
-	std::atomic<uint32_t> width{1280};
-	std::atomic<uint32_t> height{720};
+	std::atomic<bool> verbose_logging{false};
 	std::array<std::vector<unsigned char>, 3> video_buffers;
 	size_t video_buffer_index = 0;
-	bool auto_connect = true;
+	SourceSettings current_settings;
+
+	static SourceSettings read_settings(obs_data_t *settings)
+	{
+		SourceSettings value;
+		value.connection_mode = parse_connection_mode(obs_data_get_string(settings, "connection_mode"));
+		value.quality = parse_quality(obs_data_get_string(settings, "quality"));
+		value.bgobs_optimized = obs_data_get_bool(settings, "bgobs_optimized");
+		value.auto_connect = obs_data_get_bool(settings, "auto_connect");
+		value.adb_path = obs_data_string(settings, "adb_path");
+		if (value.adb_path.empty())
+			value.adb_path = default_adb_path();
+		value.adb_serial = obs_data_string(settings, "adb_serial");
+		value.package_name = obs_data_string(settings, "adb_package_name");
+		if (value.package_name.empty())
+			value.package_name = CACAM_PACKAGE_NAME;
+		value.adb_local_port = static_cast<int>(obs_data_get_int(settings, "adb_local_port"));
+		if (value.adb_local_port <= 0)
+			value.adb_local_port = ADB_LOCAL_PORT_DEFAULT;
+		value.adb_device_port = static_cast<int>(obs_data_get_int(settings, "adb_device_port"));
+		if (value.adb_device_port <= 0)
+			value.adb_device_port = ADB_DEVICE_PORT_DEFAULT;
+		return value;
+	}
+
+	SourceSettings settings_snapshot() const
+	{
+		std::lock_guard<std::mutex> guard(settings_mutex);
+		return current_settings;
+	}
+
+	void log_verbose(const char *format, ...) const
+	{
+		if (!verbose_logging.load())
+			return;
+
+		va_list args;
+		va_start(args, format);
+		bgobs_logv(LOG_INFO, format, args);
+		va_end(args);
+	}
 
 	void start()
 	{
 		std::lock_guard<std::mutex> guard(worker_mutex);
 		if (worker.joinable())
 			return;
+		const SourceSettings settings = settings_snapshot();
 		stop_requested.store(false);
-		worker = std::thread(&CacamUsbSource::worker_loop, this);
+		log_verbose("[CaCam] Starting %s worker", connection_mode_setting(settings.connection_mode));
+		worker = std::thread(&CacamUsbSource::worker_loop, this, settings);
 	}
 
 	void stop()
 	{
-		std::thread worker_to_join;
-		{
-			std::lock_guard<std::mutex> guard(worker_mutex);
-			stop_requested.store(true);
-			if (worker.joinable())
-				worker_to_join = std::move(worker);
+		std::lock_guard<std::mutex> guard(worker_mutex);
+		stop_requested.store(true);
+		if (worker.joinable()) {
+			log_verbose("[CaCam] Stopping worker");
+			worker.join();
 		}
-		if (worker_to_join.joinable())
-			worker_to_join.join();
 	}
 
-	void worker_loop()
+	bool prepare_adb_device(const SourceSettings &settings, std::string &serial)
 	{
+		const std::string adb_path = settings.adb_path.empty() ? default_adb_path() : settings.adb_path;
+		int exit_code = 0;
+		run_command_capture(adb_command(adb_path, "", "start-server"), &exit_code, &stop_requested);
+		if (exit_code != 0)
+			log_verbose("[CaCam ADB] adb start-server returned %d", exit_code);
+
+		const std::string devices_output =
+			run_command_capture(adb_command(adb_path, "", "devices"), &exit_code, &stop_requested);
+		if (exit_code != 0) {
+			obs_log(LOG_ERROR, "[CaCam ADB] Cannot list ADB devices with %s", adb_path.c_str());
+			return false;
+		}
+
+		const std::vector<std::string> serials = adb_device_serials(devices_output);
+		if (!settings.adb_serial.empty()) {
+			serial = settings.adb_serial;
+			if (std::find(serials.begin(), serials.end(), serial) == serials.end()) {
+				obs_log(LOG_WARNING,
+					"[CaCam ADB] Configured device %s is not currently listed as authorized",
+					serial.c_str());
+				if (serials.empty()) {
+					obs_log(LOG_WARNING,
+						"[CaCam ADB] No authorized ADB phone. Unlock the phone and accept USB debugging.");
+					return false;
+				}
+				if (serials.size() > 1) {
+					obs_log(LOG_WARNING,
+						"[CaCam ADB] Multiple ADB phones are authorized; set the serial in source properties.");
+					return false;
+				}
+				serial = serials.front();
+				obs_log(LOG_INFO, "[CaCam ADB] Falling back to the only authorized ADB phone: %s",
+					serial.c_str());
+			}
+		} else {
+			if (serials.empty()) {
+				obs_log(LOG_WARNING,
+					"[CaCam ADB] No authorized ADB phone. Unlock the phone and accept USB debugging.");
+				return false;
+			}
+			if (serials.size() > 1) {
+				obs_log(LOG_WARNING,
+					"[CaCam ADB] Multiple ADB phones are authorized; using %s. Set the serial in source properties if needed.",
+					serials.front().c_str());
+			}
+			serial = serials.front();
+		}
+
+		const std::string local_port = std::to_string(settings.adb_local_port);
+		run_command_capture(adb_command(adb_path, serial, "forward --remove tcp:" + local_port), &exit_code,
+				    &stop_requested);
+
+		const std::string forward_arguments =
+			"forward tcp:" + local_port + " tcp:" + std::to_string(settings.adb_device_port);
+		const std::string forward_output =
+			run_command_capture(adb_command(adb_path, serial, forward_arguments), &exit_code, &stop_requested);
+		if (exit_code != 0) {
+			obs_log(LOG_ERROR, "[CaCam ADB] Cannot create ADB forward tcp:%d -> tcp:%d: %s",
+				settings.adb_local_port, settings.adb_device_port, forward_output.c_str());
+			return false;
+		}
+
+		const CacamQualityInfo &info = quality_info(settings.quality);
+		const std::string component = settings.package_name + "/.MainActivity";
+		const std::string launch_arguments =
+			"shell am start --activity-single-top -n " + shell_quote(component) +
+			" --es connection ADB --es quality " + shell_quote(info.intent_value) + " --ei fps " +
+			std::to_string(info.fps) + " --ez bgobs_optimized " +
+			(settings.bgobs_optimized ? "true" : "false") + " --ez start_stream true";
+		const std::string launch_output =
+			run_command_capture(adb_command(adb_path, serial, launch_arguments), &exit_code, &stop_requested);
+		if (exit_code != 0) {
+			obs_log(LOG_ERROR, "[CaCam ADB] Cannot launch CaCam on %s: %s", serial.c_str(),
+				launch_output.c_str());
+			return false;
+		}
+
+		log_verbose("[CaCam ADB] Forward ready on 127.0.0.1:%d for %s %s", settings.adb_local_port,
+			    serial.c_str(), info.setting);
+		return true;
+	}
+
+	bool wait_for_adb_health(const SourceSettings &settings)
+	{
+		const std::string health_url =
+			"http://127.0.0.1:" + std::to_string(settings.adb_local_port) + "/health";
+		std::vector<unsigned char> response;
+		for (int attempt = 0; attempt < ADB_HEALTH_RETRY_COUNT && !stop_requested.load(); ++attempt) {
+			if (http_get_binary(health_url, ADB_HEALTH_TIMEOUT_MS, MAX_HEALTH_RESPONSE_SIZE, response)) {
+				const std::string body(response.begin(), response.end());
+				if (body.find("ok") != std::string::npos)
+					return true;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		}
+		return false;
+	}
+
+	void remove_adb_forward(const SourceSettings &settings, const std::string &serial)
+	{
+		if (serial.empty())
+			return;
+		const std::string adb_path = settings.adb_path.empty() ? default_adb_path() : settings.adb_path;
+		int exit_code = 0;
+		run_command_capture(adb_command(adb_path, serial,
+						"forward --remove tcp:" + std::to_string(settings.adb_local_port)),
+				    &exit_code, &stop_requested);
+		UNUSED_PARAMETER(exit_code);
+	}
+
+	void adb_worker_loop(const SourceSettings &settings)
+	{
+		std::string serial;
+		while (!stop_requested.load()) {
+			if (!prepare_adb_device(settings, serial)) {
+				sleep_retry();
+				continue;
+			}
+
+			if (!wait_for_adb_health(settings)) {
+				obs_log(LOG_WARNING, "[CaCam ADB] CaCam did not answer on 127.0.0.1:%d",
+					settings.adb_local_port);
+				remove_adb_forward(settings, serial);
+				sleep_retry();
+				continue;
+			}
+
+			read_adb_snapshots(settings);
+			remove_adb_forward(settings, serial);
+			sleep_retry();
+		}
+	}
+
+	void read_adb_snapshots(const SourceSettings &settings)
+	{
+		const CacamQualityInfo &info = quality_info(settings.quality);
+		const std::string snapshot_url =
+			"http://127.0.0.1:" + std::to_string(settings.adb_local_port) + "/snapshot.jpg";
+		const auto frame_interval = std::chrono::milliseconds(1000 / std::max(1, info.fps));
+		std::vector<unsigned char> jpeg;
+		bool first_frame_logged = false;
+		bool warning_logged = false;
+		int consecutive_failures = 0;
+		while (!stop_requested.load()) {
+			const auto frame_started_at = std::chrono::steady_clock::now();
+			if (http_get_binary(snapshot_url, ADB_SNAPSHOT_TIMEOUT_MS, MAX_SNAPSHOT_RESPONSE_SIZE, jpeg) &&
+			    output_jpeg(jpeg)) {
+				if (!first_frame_logged) {
+					log_verbose("[CaCam ADB] First snapshot frame received");
+					first_frame_logged = true;
+				}
+				warning_logged = false;
+				consecutive_failures = 0;
+			} else if (!warning_logged) {
+				obs_log(LOG_WARNING, "[CaCam ADB] Waiting for snapshots from %s", snapshot_url.c_str());
+				warning_logged = true;
+				++consecutive_failures;
+			} else {
+				++consecutive_failures;
+			}
+
+			if (consecutive_failures >= 30) {
+				obs_log(LOG_WARNING, "[CaCam ADB] Snapshot stream lost; reconnecting");
+				return;
+			}
+
+			const auto elapsed = std::chrono::steady_clock::now() - frame_started_at;
+			if (elapsed < frame_interval)
+				std::this_thread::sleep_for(frame_interval - elapsed);
+		}
+	}
+
+	void worker_loop(SourceSettings settings)
+	{
+		if (settings.connection_mode == CacamConnectionMode::Adb) {
+			adb_worker_loop(settings);
+			return;
+		}
+
 		UsbApi api;
 		if (!api.load()) {
 			obs_log(LOG_ERROR, "[CaCam USB] libusb runtime not found");
@@ -744,11 +1504,61 @@ private:
 		}
 
 		AccessoryRequestResult last_request = {};
+		bool has_last_request = false;
+		AccessoryOpenResult last_open = {};
+		bool has_last_open = false;
 		while (!stop_requested.load()) {
 			AccessoryConnection connection;
-			if (!open_accessory(api, context, connection)) {
+			const AccessoryOpenResult open_result = open_accessory(api, context, connection);
+			if (open_result.status != AccessoryOpenStatus::Opened) {
+				const bool open_changed = !has_last_open || open_result.status != last_open.status ||
+							  open_result.vendor != last_open.vendor ||
+							  open_result.product != last_open.product ||
+							  open_result.interface_number != last_open.interface_number ||
+							  open_result.error != last_open.error ||
+							  open_result.saw_adb_interface != last_open.saw_adb_interface;
+				if (open_changed) {
+					switch (open_result.status) {
+					case AccessoryOpenStatus::OpenFailed:
+						obs_log(LOG_WARNING,
+							"[CaCam USB] Android Open Accessory device %04x:%04x is not "
+							"accessible: %s (%d). On Windows, verify the WinUSB driver.",
+							open_result.vendor, open_result.product,
+							usb_error_name(api, open_result.error), open_result.error);
+						break;
+					case AccessoryOpenStatus::AccessoryInterfaceInaccessible:
+						obs_log(LOG_WARNING,
+							"[CaCam USB] Android Open Accessory interface %d on %04x:%04x "
+							"is present but not accessible: %s (%d). Install a WinUSB "
+							"driver for the accessory interface. The ADB interface is not "
+							"the CaCam video stream.",
+							open_result.interface_number, open_result.vendor,
+							open_result.product, usb_error_name(api, open_result.error),
+							open_result.error);
+						break;
+					case AccessoryOpenStatus::NotFound:
+						if (open_result.saw_adb_interface)
+							obs_log(LOG_WARNING,
+								"[CaCam USB] Only the Android ADB interface is accessible. "
+								"Install a WinUSB driver for the Android Accessory "
+								"interface; ADB does not carry the CaCam video stream.");
+						break;
+					case AccessoryOpenStatus::Opened:
+						break;
+					}
+				}
+				last_open = open_result;
+				has_last_open = true;
+
+				if (open_result.status != AccessoryOpenStatus::NotFound ||
+				    open_result.saw_adb_interface) {
+					sleep_retry();
+					continue;
+				}
+
 				const AccessoryRequestResult request = request_first_android_accessory(api, context);
-				const bool request_changed = request.status != last_request.status ||
+				const bool request_changed = !has_last_request ||
+							     request.status != last_request.status ||
 							     request.vendor != last_request.vendor ||
 							     request.product != last_request.product ||
 							     request.protocol != last_request.protocol ||
@@ -756,7 +1566,7 @@ private:
 				if (request_changed)
 					switch (request.status) {
 					case AccessoryRequestStatus::Requested:
-						obs_log(LOG_INFO,
+						log_verbose(
 							"[CaCam USB] Requested Android Open Accessory mode for %04x:%04x (AOA %u)",
 							request.vendor, request.product, request.protocol);
 						break;
@@ -774,18 +1584,26 @@ private:
 							usb_error_name(api, request.error), request.error);
 						break;
 					case AccessoryRequestStatus::NotSupported:
+						log_verbose(
+							"[CaCam USB] No Android Open Accessory device is visible to libusb. "
+							"On Windows, verify the phone uses a WinUSB-accessible interface; "
+							"MTP/WPD devices cannot be switched to accessory mode by BGOBS.");
 						break;
 					}
 				last_request = request;
+				has_last_request = true;
 				sleep_retry();
 				continue;
 			}
 
+			last_open = {};
+			has_last_open = false;
 			last_request = {};
-			obs_log(LOG_INFO, "[CaCam USB] Accessory interface opened");
+			has_last_request = false;
+			log_verbose("[CaCam USB] Accessory interface opened");
 			read_stream(api, connection);
 			connection.close(api);
-			obs_log(LOG_INFO, "[CaCam USB] Disconnected");
+			log_verbose("[CaCam USB] Disconnected");
 			sleep_retry();
 		}
 
@@ -830,7 +1648,7 @@ private:
 
 			if (type == CACAM_TYPE_HELLO) {
 				const std::string text(payload.begin(), payload.end());
-				obs_log(LOG_INFO, "[CaCam USB] Connected: %s", text.c_str());
+				log_verbose("[CaCam USB] Connected: %s", text.c_str());
 			} else if (type == CACAM_TYPE_NV21) {
 				const int64_t clock_offset_us = static_cast<int64_t>(os_gettime_ns() / 1000) -
 								static_cast<int64_t>(timestamp_us);
@@ -863,13 +1681,29 @@ private:
 					continue;
 				}
 				if (output_nv21(payload, timestamp_us) && !first_frame_logged) {
-					obs_log(LOG_INFO, "[CaCam USB] First video frame: %ux%u (%lld ms sender queue)",
-						read_u32_be(payload.data()), read_u32_be(payload.data() + 4),
-						static_cast<long long>(sender_queue_us / 1000));
+					log_verbose("[CaCam USB] First video frame: %ux%u (%lld ms sender queue)",
+						    read_u32_be(payload.data()), read_u32_be(payload.data() + 4),
+						    static_cast<long long>(sender_queue_us / 1000));
 					first_frame_logged = true;
 				}
 			}
 		}
+	}
+
+	bool output_jpeg(const std::vector<unsigned char> &jpeg)
+	{
+		if (jpeg.empty())
+			return false;
+
+		const cv::Mat encoded(1, static_cast<int>(jpeg.size()), CV_8UC1,
+				      const_cast<unsigned char *>(jpeg.data()));
+		const cv::Mat bgr = cv::imdecode(encoded, cv::IMREAD_COLOR);
+		if (bgr.empty())
+			return false;
+
+		cv::Mat bgra;
+		cv::cvtColor(bgr, bgra, cv::COLOR_BGR2BGRA);
+		return output_bgra_frame(bgra);
 	}
 
 	bool output_nv21(const std::vector<unsigned char> &payload, uint64_t message_timestamp_us)
@@ -886,35 +1720,76 @@ private:
 
 		const size_t expected_size =
 			static_cast<size_t>(frame_width) * static_cast<size_t>(frame_height) * 3 / 2;
-		if (payload.size() - CACAM_FRAME_METADATA_SIZE < expected_size)
+		if (payload.size() - CACAM_FRAME_METADATA_SIZE != expected_size)
 			return false;
 
 		auto *frame_data = const_cast<unsigned char *>(payload.data() + CACAM_FRAME_METADATA_SIZE);
 		const cv::Mat nv21(static_cast<int>(frame_height + frame_height / 2), static_cast<int>(frame_width),
 				   CV_8UC1, frame_data);
+		cv::Mat bgra;
+		cv::cvtColor(nv21, bgra, cv::COLOR_YUV2BGRA_NV21);
+		UNUSED_PARAMETER(message_timestamp_us);
+		UNUSED_PARAMETER(frame_timestamp_us);
+		return output_bgra_frame(bgra);
+	}
+
+	bool output_bgra_frame(const cv::Mat &bgra)
+	{
+		if (bgra.empty())
+			return false;
+
+		const auto [canvas_width, canvas_height] = source_canvas_size();
 		auto &video_buffer = video_buffers[video_buffer_index];
 		video_buffer_index = (video_buffer_index + 1) % video_buffers.size();
-		video_buffer.resize(static_cast<size_t>(frame_width) * static_cast<size_t>(frame_height) * 4);
-		cv::Mat bgra(static_cast<int>(frame_height), static_cast<int>(frame_width), CV_8UC4,
-			     video_buffer.data());
-		cv::cvtColor(nv21, bgra, cv::COLOR_YUV2BGRA_NV21);
+		video_buffer.resize(static_cast<size_t>(canvas_width) * static_cast<size_t>(canvas_height) * 4);
 
-		width.store(static_cast<uint32_t>(bgra.cols));
-		height.store(static_cast<uint32_t>(bgra.rows));
+		cv::Mat output(static_cast<int>(canvas_height), static_cast<int>(canvas_width), CV_8UC4,
+			       video_buffer.data());
+
+		const double canvas_aspect = static_cast<double>(canvas_width) / static_cast<double>(canvas_height);
+		const double frame_aspect = static_cast<double>(bgra.cols) / static_cast<double>(bgra.rows);
+		int crop_x = 0;
+		int crop_y = 0;
+		int crop_width = bgra.cols;
+		int crop_height = bgra.rows;
+		if (frame_aspect > canvas_aspect) {
+			crop_width = std::max(1, static_cast<int>(static_cast<double>(bgra.rows) * canvas_aspect));
+			crop_x = std::max(0, (bgra.cols - crop_width) / 2);
+		} else if (frame_aspect < canvas_aspect) {
+			crop_height = std::max(1, static_cast<int>(static_cast<double>(bgra.cols) / canvas_aspect));
+			crop_y = std::max(0, (bgra.rows - crop_height) / 2);
+		}
+
+		crop_width = std::min(crop_width, bgra.cols - crop_x);
+		crop_height = std::min(crop_height, bgra.rows - crop_y);
+		const cv::Mat crop = bgra(cv::Rect(crop_x, crop_y, crop_width, crop_height));
+		const int interpolation = crop.cols > static_cast<int>(canvas_width) ||
+							  crop.rows > static_cast<int>(canvas_height)
+						  ? cv::INTER_AREA
+						  : cv::INTER_LINEAR;
+		cv::resize(crop, output, output.size(), 0, 0, interpolation);
 
 		obs_source_frame frame = {};
 		frame.format = VIDEO_FORMAT_BGRA;
-		frame.width = static_cast<uint32_t>(bgra.cols);
-		frame.height = static_cast<uint32_t>(bgra.rows);
-		frame.data[0] = bgra.data;
-		frame.linesize[0] = static_cast<uint32_t>(bgra.step[0]);
-		UNUSED_PARAMETER(message_timestamp_us);
-		UNUSED_PARAMETER(frame_timestamp_us);
+		frame.width = canvas_width;
+		frame.height = canvas_height;
+		frame.data[0] = output.data;
+		frame.linesize[0] = static_cast<uint32_t>(output.step[0]);
 		frame.timestamp = os_gettime_ns();
 		obs_source_output_video(source, &frame);
 		return true;
 	}
 };
+
+std::string localized_text_with_version(const char *key)
+{
+	std::string text = obs_module_text(key);
+	const std::string placeholder = "%1";
+	const size_t position = text.find(placeholder);
+	if (position != std::string::npos)
+		text.replace(position, placeholder.size(), PLUGIN_VERSION);
+	return text;
+}
 
 } // namespace
 
@@ -937,25 +1812,59 @@ extern "C" void cacam_usb_source_destroy(void *data)
 extern "C" uint32_t cacam_usb_source_get_width(void *data)
 {
 	const auto *source = static_cast<CacamUsbSource *>(data);
-	return source ? source->get_width() : 1280;
+	return source ? source->get_width() : source_canvas_size().first;
 }
 
 extern "C" uint32_t cacam_usb_source_get_height(void *data)
 {
 	const auto *source = static_cast<CacamUsbSource *>(data);
-	return source ? source->get_height() : 720;
+	return source ? source->get_height() : source_canvas_size().second;
 }
 
 extern "C" void cacam_usb_source_defaults(obs_data_t *settings)
 {
+	obs_data_set_default_string(settings, "connection_mode", "usb");
+	obs_data_set_default_string(settings, "quality", "standard");
+	obs_data_set_default_bool(settings, "bgobs_optimized", true);
+	obs_data_set_default_string(settings, "adb_path", default_adb_path().c_str());
+	obs_data_set_default_string(settings, "adb_serial", "");
+	obs_data_set_default_string(settings, "adb_package_name", CACAM_PACKAGE_NAME);
+	obs_data_set_default_int(settings, "adb_local_port", ADB_LOCAL_PORT_DEFAULT);
+	obs_data_set_default_int(settings, "adb_device_port", ADB_DEVICE_PORT_DEFAULT);
 	obs_data_set_default_bool(settings, "auto_connect", true);
+	obs_data_set_default_bool(settings, "verbose_logging", false);
 }
 
 extern "C" obs_properties_t *cacam_usb_source_properties(void *data)
 {
 	UNUSED_PARAMETER(data);
 	obs_properties_t *properties = obs_properties_create();
+	const std::string version_info = localized_text_with_version("CaCamUsbVersionInfo");
+	obs_properties_add_text(properties, "bgobs_version_info", version_info.c_str(), OBS_TEXT_INFO);
+
+	obs_property_t *connection = obs_properties_add_list(properties, "connection_mode",
+							     obs_module_text("CaCamConnectionMode"),
+							     OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(connection, obs_module_text("CaCamConnectionUsb"), "usb");
+	obs_property_list_add_string(connection, obs_module_text("CaCamConnectionAdb"), "adb");
+
+	obs_property_t *quality = obs_properties_add_list(properties, "quality", obs_module_text("CaCamQuality"),
+							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(quality, obs_module_text("CaCamQualityPourri"), "pourri");
+	obs_property_list_add_string(quality, obs_module_text("CaCamQualityLow"), "low");
+	obs_property_list_add_string(quality, obs_module_text("CaCamQualityStandard"), "standard");
+	obs_property_list_add_string(quality, obs_module_text("CaCamQualityHd"), "hd");
+	obs_property_list_add_string(quality, obs_module_text("CaCamQualityUhd"), "uhd");
+
+	obs_properties_add_bool(properties, "bgobs_optimized", obs_module_text("CaCamBgobsOptimized"));
+	obs_properties_add_text(properties, "adb_path", obs_module_text("CaCamAdbPath"), OBS_TEXT_DEFAULT);
+	obs_properties_add_text(properties, "adb_serial", obs_module_text("CaCamAdbSerial"), OBS_TEXT_DEFAULT);
+	obs_properties_add_int(properties, "adb_local_port", obs_module_text("CaCamAdbLocalPort"), 1024, 65535, 1);
+	obs_properties_add_int(properties, "adb_device_port", obs_module_text("CaCamAdbDevicePort"), 1024, 65535, 1);
+	obs_properties_add_text(properties, "adb_package_name", obs_module_text("CaCamAdbPackageName"),
+				OBS_TEXT_DEFAULT);
 	obs_properties_add_bool(properties, "auto_connect", obs_module_text("CaCamUsbAutoConnect"));
+	obs_properties_add_bool(properties, "verbose_logging", obs_module_text("CaCamUsbVerboseLogging"));
 	return properties;
 }
 

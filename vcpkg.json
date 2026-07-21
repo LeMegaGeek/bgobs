@@ -23,6 +23,10 @@
       "features": [
         "jpeg"
       ]
+    },
+    {
+      "name": "libusb",
+      "platform": "osx"
     }
   ]
 }

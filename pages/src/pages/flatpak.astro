@@ -1,53 +1,42 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { joinURL, withTrailingSlash } from "ufo";
 
-import { Code } from "astro:components";
-
 import Layout from "../layouts/Layout.astro";
-
-import { PRODUCTION_BASE_URL } from "../lib/info.js";
+import { PRODUCTION_BASE_URL, RELEASES_URL } from "../lib/info.js";
 
 const { BASE_URL } = import.meta.env;
 ---
 
-<Layout lang="en" title="How to use OBS Background Removal on Flatpak">
-  <Fragment slot="head-info">
-    <meta
-      name="description"
-      content="How to use OBS Background Removal on Flatpak"
-    />
-    <link
-      rel="canonical"
-      href={withTrailingSlash(joinURL(PRODUCTION_BASE_URL, "flatpak"))}
-    />
-  </Fragment>
-
-  <main class="white-box">
-    <h1>Install OBS Background Removal on Flatpak</h1>
-
-    <ol>
-      <li>
-        <strong>Install the Background Removal Plugin:</strong><br />
-        Open a terminal and run:<br />
-        <Code
-          code={`flatpak install flathub com.obsproject.Studio.Plugin.BackgroundRemoval`}
-          lang="bash"
-        />
-      </li>
-      <li>
-        <strong>Usage:</strong><br />
-        See the <a href={joinURL(BASE_URL, "usage/")}>usage page</a> for how to use
-        the plugin.
-      </li>
-    </ol>
-
-    <p>All set!</p>
-
-    <p><a href={joinURL(BASE_URL, "/")}>Back to the top page</a></p>
+<Layout
+  lang="en"
+  title="BGOBS and Flatpak"
+  description="BGOBS does not currently publish or endorse a Flatpak package; use only assets from official BGOBS GitHub releases."
+  canonical={joinURL(PRODUCTION_BASE_URL, "flatpak")}
+>
+  <main id="main-content" class="content-panel prose">
+    <p class="eyebrow">Distribution status</p>
+    <h1>No official BGOBS Flatpak package</h1>
+    <p class="lede">
+      BGOBS does not currently publish or endorse a Flatpak package. A package
+      with a similar filter name may belong to another project and should not be
+      treated as a BGOBS build.
+    </p>
+    <aside class="callout">
+      <p>
+        Use only BGOBS-branded assets attached to the official LeMegaGeek
+        release. If no compatible package is listed, no supported Flatpak
+        download is available for that release.
+      </p>
+    </aside>
+    <nav class="page-nav" aria-label="Page navigation">
+      <a href={RELEASES_URL}>Official GitHub Releases</a>
+      <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
+    </nav>
   </main>
 </Layout>

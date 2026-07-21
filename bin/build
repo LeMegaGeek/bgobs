@@ -16,30 +16,51 @@ export PLUGIN_BUILD_DIR
 # shellcheck disable=SC2120
 xcbeautify() { if command -v xcbeautify >/dev/null 2>&1; then command xcbeautify "$@"; else cat; fi; }
 
+linux_build() {
+  local build_dir package_stage release_dir
+  local -a runtime_packages
+  build_dir="$PLUGIN_BUILD_DIR/build_plugin"
+  package_stage="$build_dir/package-validation"
+  release_dir="$build_dir/release"
+
+  cmake \
+    -G Ninja \
+    -S "$ROOT_DIR" \
+    -B "$build_dir" \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DBGOBS_PACKAGE_SIGNING_STATUS=unsigned \
+    -DBUILD_TESTING=ON
+
+  cmake --build "$build_dir"
+  ctest --test-dir "$build_dir" --output-on-failure
+
+  rm -rf "$release_dir" "$package_stage"
+  (cd "$build_dir" && cpack -G DEB)
+
+  mapfile -t runtime_packages < <(find "$release_dir" -maxdepth 1 -type f -name '*.deb' ! -name '*dbgsym*' -print)
+  if [[ ${#runtime_packages[@]} -ne 1 ]]; then
+    printf 'ERROR: Expected exactly one runtime Debian package in %s.\n' "$release_dir" >&2
+    exit 1
+  fi
+
+  dpkg-deb -x "${runtime_packages[0]}" "$package_stage"
+  . "$build_dir/cmake_export.sh"
+  python3 "$ROOT_DIR/scripts/validate_package.py" \
+    --root "$package_stage" \
+    --platform linux \
+    --version "$PLUGIN_VERSION" \
+    --signing-status unsigned
+
+  printf 'Validated unsigned package. Install it with:\n'
+  printf '  sudo dpkg -i %q\n' "${runtime_packages[0]}"
+}
+
 debian_forky() {
-  cmake -G Ninja -S "$ROOT_DIR" -B "$PLUGIN_BUILD_DIR/build_plugin"
-
-  cmake --build "$PLUGIN_BUILD_DIR/build_plugin"
-
-  (cd "$PLUGIN_BUILD_DIR/build_plugin" && cpack -G DEB)
-
-  . "$PLUGIN_BUILD_DIR/build_plugin/cmake_export.sh"
-
-  printf 'Run the following command to install the plugin:\n'
-  printf '  sudo dpkg -i %s\n' "$ROOT_DIR/release/${PLUGIN_NAME}_*.deb"
+  linux_build
 }
 
 ubuntu_resolute() {
-  cmake -G Ninja -S "$ROOT_DIR" -B "$PLUGIN_BUILD_DIR/build_plugin"
-
-  cmake --build "$PLUGIN_BUILD_DIR/build_plugin"
-
-  (cd "$PLUGIN_BUILD_DIR/build_plugin" && cpack -G DEB)
-
-  . "$PLUGIN_BUILD_DIR/build_plugin/cmake_export.sh"
-
-  printf 'Run the following command to install the plugin:\n'
-  printf '  sudo dpkg -i %s\n' "$ROOT_DIR/release/${PLUGIN_NAME}_*.deb"
+  linux_build
 }
 
 macos() {
@@ -141,10 +162,16 @@ Darwin)
     # shellcheck disable=SC1091
     . /etc/os-release
 
-    case "$ID" in
+    linux_family=""
+    case " ${ID:-} ${ID_LIKE:-} " in
+    *" ubuntu "*) linux_family=ubuntu ;;
+    *" debian "*) linux_family=debian ;;
+    esac
+
+    case "$linux_family" in
     debian)
-      case "$VERSION_CODENAME" in
-      forky)
+      case "${VERSION_CODENAME:-}" in
+      trixie | forky)
         debian_forky
         exit 0
         ;;
@@ -155,8 +182,8 @@ Darwin)
       esac
       ;;
     ubuntu)
-      case "$VERSION_CODENAME" in
-      resolute)
+      case "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}" in
+      noble | resolute)
         ubuntu_resolute
         exit 0
         ;;

@@ -13,28 +13,6 @@
 name: Windows Package
 
 on:
-  push:
-    branches:
-      - 'release-build/**'
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      VCPKG_BINARY_SOURCES:
-        description: The vcpkg binary cache configuration.
-        required: true
-        type: string
-        default: clear;http,https://vcpkg-obs.kaito.tokyo/{name}/{version}/{sha},read
-      vcpkg-version:
-        description: The vcpkg git ref to use.
-        required: true
-        type: string
-        default: 9849e070ad4c3383890fb1c80ae0c54325e2484a
-      ort-version:
-        description: The ONNX Runtime version.
-        required: true
-        type: string
-        default: v1.23.2
   workflow_call:
     inputs:
       environment:
@@ -64,7 +42,7 @@ jobs:
     timeout-minutes: 180
 
     permissions:
-      contents: write
+      contents: read
 
     env:
       CLEAN_PWSH_ENV: '${{ github.workspace }}\.github\scripts\clean-env-windows.ps1'
@@ -184,6 +162,38 @@ jobs:
 
           cmake -P ./scripts/download_deps.cmake
 
+      - name: Download Android platform-tools (Windows x64)
+        shell: pwsh
+        env:
+          PATH: '${{ env.FILTERED_PATH }}'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          . $env:CLEAN_PWSH_ENV
+
+          $VendorDir = Join-Path $pwd '.deps_vendor'
+          $Archive = Join-Path $VendorDir 'platform-tools-windows.zip'
+          $ExtractDir = Join-Path $VendorDir 'platform-tools-windows'
+          $Url = 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip'
+
+          New-Item -ItemType Directory -Path $VendorDir -Force
+          Invoke-WebRequest -Uri $Url -OutFile $Archive
+          Remove-Item -Path $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $Archive -DestinationPath $ExtractDir -Force
+
+          foreach ($RequiredPath in @(
+            "$ExtractDir\platform-tools\adb.exe",
+            "$ExtractDir\platform-tools\AdbWinApi.dll",
+            "$ExtractDir\platform-tools\AdbWinUsbApi.dll"
+          )) {
+            if (-not (Test-Path $RequiredPath -PathType Leaf)) {
+              Write-Error "Required Android platform-tools file is missing: $RequiredPath"
+              exit 1
+            }
+          }
+
       - name: Build libobs (Windows)
         shell: pwsh
         env:
@@ -269,6 +279,7 @@ jobs:
             "-DCMAKE_TOOLCHAIN_FILE=$VcpkgToolchain",
             "-DVCPKG_INSTALLED_DIR=$VcpkgInstalledDir",
             "-DVCPKG_TARGET_TRIPLET=x64-windows-static-md-obs",
+            "-DBGOBS_PACKAGE_SIGNING_STATUS=unsigned",
             "-DBUILD_TESTING=ON"
           )
 
@@ -314,65 +325,9 @@ jobs:
           ./scripts/package_plugin_windows.ps1 -Target x64
 
       - name: Upload Plugin Binary
-        if: ${{ !(startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-build/')) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pluginbinary-windows-x64-${{ github.run_id }}
-          path: |
-            release/*-windows-x64.zip
-            release/*-windows-x64-pdb.zip
+          path: release
           if-no-files-found: error
           retention-days: 7
-
-      - name: Publish Windows release
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-build/') }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_REF_NAME: ${{ github.ref_name }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
-          $PSNativeCommandUseErrorActionPreference = $true
-
-          $Tag = $env:RELEASE_REF_NAME
-          if ($Tag.StartsWith('release-build/')) {
-            $Tag = $Tag.Substring('release-build/'.Length)
-          }
-          if ($Tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-            throw "Invalid release tag: $Tag"
-          }
-
-          $Version = $Tag.Substring(1)
-          $NotesFile = "release-notes/$Tag.md"
-          $PackagePaths = @(
-            "release/bgobs-$Version-windows-x64.zip",
-            "release/bgobs-$Version-windows-x64-pdb.zip"
-          )
-          if (-not (Test-Path $NotesFile -PathType Leaf)) {
-            throw "Release notes are missing: $NotesFile"
-          }
-          foreach ($PackagePath in $PackagePaths) {
-            if (-not (Test-Path $PackagePath -PathType Leaf)) {
-              throw "Release package is missing: $PackagePath"
-            }
-            if ((Get-Item $PackagePath).Length -le 0) {
-              throw "Release package is empty: $PackagePath"
-            }
-          }
-
-          $PSNativeCommandUseErrorActionPreference = $false
-          gh release view $Tag --repo $env:GITHUB_REPOSITORY *> $null
-          $ReleaseExists = $LASTEXITCODE -eq 0
-          $PSNativeCommandUseErrorActionPreference = $true
-          if (-not $ReleaseExists) {
-            gh release create $Tag `
-              --repo $env:GITHUB_REPOSITORY `
-              --verify-tag `
-              --title "BGOBS $Version" `
-              --notes-file $NotesFile
-          }
-
-          gh release upload $Tag @PackagePaths `
-            --repo $env:GITHUB_REPOSITORY `
-            --clobber

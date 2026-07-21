@@ -12,6 +12,8 @@ set(PLUGIN_EMAIL "d.github@chey.net" CACHE STRING "Author email of plugin")
 set(PLUGIN_BUILD_NUMBER "1" CACHE STRING "Build number in plugin metadata")
 set(PLUGIN_BUNDLE_ID "net.lemegageek.bgobs" CACHE STRING "Bundle ID of plugin installer")
 set(PACKAGE_VERSION_SUFFIX "" CACHE STRING "Version suffix for plugin package")
+set(BGOBS_PACKAGE_SIGNING_STATUS "unsigned" CACHE STRING "Package signing status: signed or unsigned")
+set_property(CACHE BGOBS_PACKAGE_SIGNING_STATUS PROPERTY STRINGS signed unsigned)
 option(BGOBS_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(BGOBS_ENABLE_THREAD_SANITIZER "Enable ThreadSanitizer" OFF)
 
@@ -45,7 +47,78 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE PLUGIN_VERSION)
   string(STRIP "${VERSION_CONTENT}" PLUGIN_VERSION)
 endblock()
 
-project(bgobs VERSION "${PLUGIN_VERSION}" LANGUAGES C CXX)
+if(
+  NOT
+    PLUGIN_VERSION
+      MATCHES
+      "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\\+[0-9A-Za-z][0-9A-Za-z.-]*)?$"
+)
+  message(FATAL_ERROR "VERSION must be a semantic version, got: ${PLUGIN_VERSION}")
+endif()
+
+set(PLUGIN_PACKAGE_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+project(bgobs VERSION "${PLUGIN_PACKAGE_VERSION}" LANGUAGES C CXX)
+
+if(NOT BGOBS_PACKAGE_SIGNING_STATUS MATCHES "^(signed|unsigned)$")
+  message(FATAL_ERROR "BGOBS_PACKAGE_SIGNING_STATUS must be signed or unsigned")
+endif()
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/buildspec.json" BUILDSPEC_CONTENT)
+string(JSON BUILDSPEC_PLUGIN_NAME GET "${BUILDSPEC_CONTENT}" name)
+string(JSON BUILDSPEC_PLUGIN_VERSION GET "${BUILDSPEC_CONTENT}" version)
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/manifest.json" MANIFEST_CONTENT)
+string(JSON MANIFEST_PLUGIN_ID GET "${MANIFEST_CONTENT}" id)
+string(JSON MANIFEST_PLUGIN_NAME GET "${MANIFEST_CONTENT}" name)
+string(JSON MANIFEST_PLUGIN_VERSION GET "${MANIFEST_CONTENT}" version)
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/config.json" CONFIG_CONTENT)
+string(JSON CONFIG_UPDATE_CHECK_TYPE TYPE "${CONFIG_CONTENT}" check_for_updates)
+
+if(NOT BUILDSPEC_PLUGIN_NAME STREQUAL PLUGIN_NAME)
+  message(FATAL_ERROR "buildspec.json name (${BUILDSPEC_PLUGIN_NAME}) must match PLUGIN_NAME (${PLUGIN_NAME})")
+endif()
+if(NOT BUILDSPEC_PLUGIN_VERSION STREQUAL PLUGIN_VERSION)
+  message(FATAL_ERROR "buildspec.json version (${BUILDSPEC_PLUGIN_VERSION}) must match VERSION (${PLUGIN_VERSION})")
+endif()
+if(NOT MANIFEST_PLUGIN_NAME STREQUAL PLUGIN_NAME)
+  message(FATAL_ERROR "data/manifest.json name (${MANIFEST_PLUGIN_NAME}) must match PLUGIN_NAME (${PLUGIN_NAME})")
+endif()
+if(NOT MANIFEST_PLUGIN_ID STREQUAL PLUGIN_BUNDLE_ID)
+  message(FATAL_ERROR "data/manifest.json id (${MANIFEST_PLUGIN_ID}) must match PLUGIN_BUNDLE_ID (${PLUGIN_BUNDLE_ID})")
+endif()
+if(NOT MANIFEST_PLUGIN_VERSION STREQUAL PLUGIN_VERSION)
+  message(FATAL_ERROR "data/manifest.json version (${MANIFEST_PLUGIN_VERSION}) must match VERSION (${PLUGIN_VERSION})")
+endif()
+if(NOT CONFIG_UPDATE_CHECK_TYPE STREQUAL "BOOLEAN")
+  message(FATAL_ERROR "data/config.json check_for_updates must be a JSON boolean")
+endif()
+
+set(BGOBS_SIGNING_STATUS_FILE "${CMAKE_CURRENT_BINARY_DIR}/BGOBS-SIGNING-STATUS.txt")
+file(
+  GENERATE OUTPUT "${BGOBS_SIGNING_STATUS_FILE}"
+  CONTENT
+    "BGOBS package signing status: ${BGOBS_PACKAGE_SIGNING_STATUS}\nVersion: ${PLUGIN_VERSION}\nSource: https://github.com/LeMegaGeek/bgobs\n"
+)
+
+set(BGOBS_ONNXRUNTIME_COPYRIGHT "${CMAKE_CURRENT_SOURCE_DIR}/LICENSES/MIT.txt")
+set(BGOBS_ONNXRUNTIME_NOTICES "")
+foreach(
+  BGOBS_ONNXRUNTIME_ROOT
+  IN
+  ITEMS
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/onnxruntime"
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/onnxruntime"
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/ort_x64-prefix"
+    "${CMAKE_CURRENT_SOURCE_DIR}/onnxruntime"
+)
+  if(EXISTS "${BGOBS_ONNXRUNTIME_ROOT}/LICENSE")
+    set(BGOBS_ONNXRUNTIME_COPYRIGHT "${BGOBS_ONNXRUNTIME_ROOT}/LICENSE")
+  endif()
+  if(EXISTS "${BGOBS_ONNXRUNTIME_ROOT}/ThirdPartyNotices.txt")
+    set(BGOBS_ONNXRUNTIME_NOTICES "${BGOBS_ONNXRUNTIME_ROOT}/ThirdPartyNotices.txt")
+  endif()
+endforeach()
 
 if(MSVC)
   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/common" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows")
@@ -73,13 +146,19 @@ endif()
 block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OS_LINUX_DETECTED)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(EXISTS "/etc/os-release")
-      file(STRINGS "/etc/os-release" OS_RELEASE_ID_LINE REGEX "^ID=")
-      string(TOLOWER "${OS_RELEASE_ID_LINE}" OS_RELEASE_ID_LINE_LOWER)
+      file(STRINGS "/etc/os-release" OS_RELEASE_ID_LINES REGEX "^(ID|ID_LIKE)=")
+      string(TOLOWER "${OS_RELEASE_ID_LINES}" OS_RELEASE_ID_LINES_LOWER)
 
-      if(OS_RELEASE_ID_LINE_LOWER MATCHES [[^id=['"]?debian['"]?$]])
-        set(OS_LINUX_DETECTED Debian)
-      elseif(OS_RELEASE_ID_LINE_LOWER MATCHES [[^id=['"]?ubuntu['"]?$]])
+      if(
+        OS_RELEASE_ID_LINES_LOWER MATCHES [[(^|;)id=['"]?ubuntu['"]?($|;)]]
+        OR OS_RELEASE_ID_LINES_LOWER MATCHES [[(^|;)id_like=['"]?[^;]*ubuntu]]
+      )
         set(OS_LINUX_DETECTED Ubuntu)
+      elseif(
+        OS_RELEASE_ID_LINES_LOWER MATCHES [[(^|;)id=['"]?debian['"]?($|;)]]
+        OR OS_RELEASE_ID_LINES_LOWER MATCHES [[(^|;)id_like=['"]?[^;]*debian]]
+      )
+        set(OS_LINUX_DETECTED Debian)
       else()
         set(OS_LINUX_DETECTED Linux)
       endif()
@@ -165,28 +244,52 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE CURL_FOUND)
 endblock()
 
 block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
-  find_package(OpenCV CONFIG QUIET)
+  set(OBS_BG_OPENCV_COMPONENTS core imgproc imgcodecs)
+  find_package(OpenCV CONFIG QUIET COMPONENTS ${OBS_BG_OPENCV_COMPONENTS})
 
-  if(NOT OpenCV_FOUND AND PkgConfig_FOUND)
-    pkg_check_modules(PC_OPENCV opencv4 IMPORTED_TARGET)
-    if(PC_OPENCV_FOUND)
-      add_library(OpenCV::opencv_core ALIAS PkgConfig::PC_OPENCV)
-      add_library(OpenCV::opencv_imgproc ALIAS PkgConfig::PC_OPENCV)
-      set(OpenCV_FOUND TRUE)
+  foreach(OBS_BG_OPENCV_COMPONENT IN LISTS OBS_BG_OPENCV_COMPONENTS)
+    if(NOT TARGET OpenCV::opencv_${OBS_BG_OPENCV_COMPONENT} AND TARGET opencv_${OBS_BG_OPENCV_COMPONENT})
+      add_library(OpenCV::opencv_${OBS_BG_OPENCV_COMPONENT} ALIAS opencv_${OBS_BG_OPENCV_COMPONENT})
     endif()
+  endforeach()
+
+  if(PkgConfig_FOUND)
+    pkg_check_modules(PC_OPENCV QUIET opencv4)
   endif()
 
-  if(NOT OpenCV_FOUND)
-    message(FATAL_ERROR "OpenCV not found via CMake or pkg-config.")
-  endif()
+  foreach(OBS_BG_OPENCV_COMPONENT IN LISTS OBS_BG_OPENCV_COMPONENTS)
+    if(NOT TARGET OpenCV::opencv_${OBS_BG_OPENCV_COMPONENT} AND PC_OPENCV_FOUND)
+      string(TOUPPER "${OBS_BG_OPENCV_COMPONENT}" OBS_BG_OPENCV_COMPONENT_UPPER)
+      find_library(
+        OBS_BG_OPENCV_${OBS_BG_OPENCV_COMPONENT_UPPER}_LIBRARY
+        NAMES opencv_${OBS_BG_OPENCV_COMPONENT}
+        HINTS ${PC_OPENCV_LIBRARY_DIRS}
+      )
+      find_path(OBS_BG_OPENCV_INCLUDE_DIR NAMES opencv2/core.hpp HINTS ${PC_OPENCV_INCLUDE_DIRS} PATH_SUFFIXES opencv4)
 
-  if(NOT TARGET OpenCV::opencv_core)
-    add_library(OpenCV::opencv_core ALIAS opencv_core)
-  endif()
+      if(OBS_BG_OPENCV_${OBS_BG_OPENCV_COMPONENT_UPPER}_LIBRARY AND OBS_BG_OPENCV_INCLUDE_DIR)
+        add_library(OBS_BG_OPENCV_${OBS_BG_OPENCV_COMPONENT} UNKNOWN IMPORTED)
+        set_target_properties(
+          OBS_BG_OPENCV_${OBS_BG_OPENCV_COMPONENT}
+          PROPERTIES
+            IMPORTED_LOCATION "${OBS_BG_OPENCV_${OBS_BG_OPENCV_COMPONENT_UPPER}_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${OBS_BG_OPENCV_INCLUDE_DIR}"
+        )
+        add_library(OpenCV::opencv_${OBS_BG_OPENCV_COMPONENT} ALIAS OBS_BG_OPENCV_${OBS_BG_OPENCV_COMPONENT})
+      endif()
+    endif()
+  endforeach()
 
-  if(NOT TARGET OpenCV::opencv_imgproc)
-    add_library(OpenCV::opencv_imgproc ALIAS opencv_imgproc)
-  endif()
+  foreach(OBS_BG_OPENCV_COMPONENT IN LISTS OBS_BG_OPENCV_COMPONENTS)
+    if(NOT TARGET OpenCV::opencv_${OBS_BG_OPENCV_COMPONENT})
+      message(
+        FATAL_ERROR
+        "OpenCV ${OBS_BG_OPENCV_COMPONENT} was not found. Install the matching OpenCV development component."
+      )
+    endif()
+  endforeach()
+
+  set(OpenCV_FOUND TRUE)
 endblock()
 
 block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIME_DELAYLOAD)
@@ -348,12 +451,15 @@ target_link_libraries(
     OBS::obs-frontend-api
     onnxruntime::onnxruntime
     CurlClient
+    CURL::libcurl
     OpenCV::opencv_core
+    OpenCV::opencv_imgcodecs
     OpenCV::opencv_imgproc
     bgobs_core
 )
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE BGOBS_VERSION_STRING="${PLUGIN_VERSION}")
 
 include(CTest)
 if(BUILD_TESTING)
@@ -398,6 +504,9 @@ set(
   data/effects/mask_alpha_filter.effect
 )
 
+set(GENERAL_DATA_FILES data/config.json data/manifest.json)
+set(LEGAL_FILES LICENSE NOTICE THIRD_PARTY_NOTICES.md)
+
 set(
   LOCALE_FILES
   data/locale/ar-EG.ini
@@ -441,17 +550,65 @@ set(
 )
 
 if(APPLE)
-  set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION "plugin")
+  find_library(
+    BGOBS_LIBUSB_RUNTIME
+    NAMES usb-1.0
+    PATHS "${PLUGIN_BUILD_DIR}/vcpkg_installed/universal-osx-obs/lib"
+    NO_DEFAULT_PATH
+  )
+  set(BGOBS_LIBUSB_COPYRIGHT "${PLUGIN_BUILD_DIR}/vcpkg_installed/universal-osx-obs/share/libusb/copyright")
+  if(NOT BGOBS_LIBUSB_RUNTIME OR NOT EXISTS "${BGOBS_LIBUSB_COPYRIGHT}")
+    message(FATAL_ERROR "The universal macOS libusb runtime or its copyright file is missing")
+  endif()
+
+  set_target_properties(
+    ${CMAKE_PROJECT_NAME}
+    PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION "plugin" INSTALL_RPATH "@loader_path/../Frameworks"
+  )
+  set_source_files_properties(${GENERAL_DATA_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+  set_source_files_properties(${LEGAL_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+  set_source_files_properties("${BGOBS_SIGNING_STATUS_FILE}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
   set_source_files_properties(${EFFECTS_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/effects")
   set_source_files_properties(${LOCALE_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/locale")
   set_source_files_properties(${MODELS_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/models")
-  target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${EFFECTS_FILES} ${LOCALE_FILES} ${MODELS_FILES})
+  target_sources(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE ${GENERAL_DATA_FILES} ${LEGAL_FILES} "${BGOBS_SIGNING_STATUS_FILE}" ${EFFECTS_FILES} ${LOCALE_FILES}
+            ${MODELS_FILES}
+  )
 
   install(
     TARGETS "${CMAKE_PROJECT_NAME}"
     BUNDLE DESTINATION "Library/Application Support/obs-studio/plugins"
     LIBRARY DESTINATION "Library/Application Support/obs-studio/plugins"
   )
+  install(
+    DIRECTORY "${PLUGIN_BUILD_DIR}/vcpkg_installed/universal-osx-obs/lib/"
+    DESTINATION "Library/Application Support/obs-studio/plugins/${CMAKE_PROJECT_NAME}.plugin/Contents/Frameworks"
+    FILES_MATCHING
+    PATTERN "libusb-1.0*.dylib"
+  )
+  install(
+    FILES "${BGOBS_LIBUSB_COPYRIGHT}"
+    DESTINATION "Library/Application Support/obs-studio/plugins/${CMAKE_PROJECT_NAME}.plugin/Contents/Resources"
+    RENAME libusb-copyright
+  )
+  install(
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/LICENSES"
+    DESTINATION "Library/Application Support/obs-studio/plugins/${CMAKE_PROJECT_NAME}.plugin/Contents/Resources"
+  )
+  install(
+    FILES "${BGOBS_ONNXRUNTIME_COPYRIGHT}"
+    DESTINATION "Library/Application Support/obs-studio/plugins/${CMAKE_PROJECT_NAME}.plugin/Contents/Resources"
+    RENAME onnxruntime-copyright
+  )
+  if(BGOBS_ONNXRUNTIME_NOTICES)
+    install(
+      FILES "${BGOBS_ONNXRUNTIME_NOTICES}"
+      DESTINATION "Library/Application Support/obs-studio/plugins/${CMAKE_PROJECT_NAME}.plugin/Contents/Resources"
+      RENAME onnxruntime-third-party-notices.txt
+    )
+  endif()
 
   configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/pkg/Distribution.xml.in"
@@ -487,6 +644,16 @@ endif()"
   )
 elseif(MSVC)
   set_target_properties_plugin(${CMAKE_PROJECT_NAME})
+  install(FILES ${LEGAL_FILES} "${BGOBS_SIGNING_STATUS_FILE}" DESTINATION "${CMAKE_PROJECT_NAME}/data")
+  install(DIRECTORY LICENSES DESTINATION "${CMAKE_PROJECT_NAME}/data")
+  install(FILES "${BGOBS_ONNXRUNTIME_COPYRIGHT}" DESTINATION "${CMAKE_PROJECT_NAME}/data" RENAME onnxruntime-copyright)
+  if(BGOBS_ONNXRUNTIME_NOTICES)
+    install(
+      FILES "${BGOBS_ONNXRUNTIME_NOTICES}"
+      DESTINATION "${CMAKE_PROJECT_NAME}/data"
+      RENAME onnxruntime-third-party-notices.txt
+    )
+  endif()
 elseif(OS_LINUX MATCHES "(Debian|Ubuntu)")
   set(OBS_PLUGIN_DATA_DIR "${CMAKE_INSTALL_DATAROOTDIR}/obs/obs-plugins/${CMAKE_PROJECT_NAME}")
   set(OBS_PLUGIN_DOC_DIR "${CMAKE_INSTALL_DATAROOTDIR}/doc/${CMAKE_PROJECT_NAME}")
@@ -494,12 +661,34 @@ elseif(OS_LINUX MATCHES "(Debian|Ubuntu)")
 
   set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES PREFIX "")
 
+  get_target_property(BGOBS_ONNXRUNTIME_TARGET_TYPE onnxruntime::onnxruntime TYPE)
+  if(BGOBS_ONNXRUNTIME_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
+    set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES INSTALL_RPATH "\$ORIGIN/bgobs-runtime")
+    install(
+      IMPORTED_RUNTIME_ARTIFACTS onnxruntime::onnxruntime
+      LIBRARY DESTINATION "${OBS_PLUGIN_LIB_DIR}/bgobs-runtime"
+    )
+    install(FILES "${BGOBS_ONNXRUNTIME_COPYRIGHT}" DESTINATION "${OBS_PLUGIN_DOC_DIR}" RENAME onnxruntime-copyright)
+    if(BGOBS_ONNXRUNTIME_NOTICES)
+      install(
+        FILES "${BGOBS_ONNXRUNTIME_NOTICES}"
+        DESTINATION "${OBS_PLUGIN_DOC_DIR}"
+        RENAME onnxruntime-third-party-notices.txt
+      )
+    endif()
+  endif()
+
   install(
     TARGETS "${CMAKE_PROJECT_NAME}"
     BUNDLE DESTINATION "${OBS_PLUGIN_LIB_DIR}"
     LIBRARY DESTINATION "${OBS_PLUGIN_LIB_DIR}"
   )
   install(FILES ${EFFECTS_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/effects")
+  install(
+    FILES ${GENERAL_DATA_FILES} ${LEGAL_FILES} "${BGOBS_SIGNING_STATUS_FILE}"
+    DESTINATION "${OBS_PLUGIN_DATA_DIR}"
+  )
+  install(DIRECTORY LICENSES DESTINATION "${OBS_PLUGIN_DATA_DIR}")
   install(FILES ${LOCALE_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/locale")
   install(FILES ${MODELS_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/models" OPTIONAL)
   install(FILES LICENSE DESTINATION "${OBS_PLUGIN_DOC_DIR}" RENAME copyright)
@@ -509,11 +698,13 @@ endif()
 
 ### CPack configurations
 set(CPACK_PACKAGE_NAME "${CMAKE_PROJECT_NAME}")
-set(CPACK_PACKAGE_VERSION "${CMAKE_PROJECT_VERSION}${PACKAGE_VERSION_SUFFIX}")
+set(CPACK_PACKAGE_VERSION "${PLUGIN_VERSION}${PACKAGE_VERSION_SUFFIX}")
 set(CPACK_PACKAGE_CONTACT "${PLUGIN_AUTHOR} <${PLUGIN_EMAIL}>")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 
 set(CPACK_ARCHIVE_THREADS 0)
-set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/release")
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/release")
+set(CPACK_PACKAGE_CHECKSUM SHA256)
 set(CPACK_SET_DESTDIR TRUE)
 set(CPACK_VERBATIM_VARIABLES TRUE)
 
@@ -522,10 +713,18 @@ set(CPACK_DEBIAN_COMPRESSION_TYPE zstd)
 set(CPACK_DEBIAN_DEBUGINFO_PACKAGE TRUE)
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS TRUE)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libusb-1.0-0")
 
 set(BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS)
 foreach(BGOBS_ONNXRUNTIME_PREFIX IN LISTS CMAKE_PREFIX_PATH)
-  list(APPEND BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS "${BGOBS_ONNXRUNTIME_PREFIX}/lib")
+  foreach(BGOBS_ONNXRUNTIME_LIB_SUFFIX lib lib64)
+    if(EXISTS "${BGOBS_ONNXRUNTIME_PREFIX}/${BGOBS_ONNXRUNTIME_LIB_SUFFIX}")
+      list(
+        APPEND BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS
+        "${BGOBS_ONNXRUNTIME_PREFIX}/${BGOBS_ONNXRUNTIME_LIB_SUFFIX}"
+      )
+    endif()
+  endforeach()
 endforeach()
 
 foreach(
@@ -533,14 +732,20 @@ foreach(
   IN
   ITEMS
     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/onnxruntime/lib"
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/onnxruntime/lib64"
     "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/ort_x86_64-prefix/lib"
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/ort_x86_64-prefix/lib64"
     "${PLUGIN_BUILD_DIR}/.deps/onnxruntime/lib"
+    "${PLUGIN_BUILD_DIR}/.deps/onnxruntime/lib64"
     "${PLUGIN_BUILD_DIR}/.deps_vendor/ort_x86_64-prefix/lib"
+    "${PLUGIN_BUILD_DIR}/.deps_vendor/ort_x86_64-prefix/lib64"
     "${PLUGIN_BUILD_DIR}/ort_installed/lib"
+    "${PLUGIN_BUILD_DIR}/ort_installed/lib64"
 )
   if(
     EXISTS "${BGOBS_ONNXRUNTIME_LIB_DIR}/libonnxruntime.so"
     OR EXISTS "${BGOBS_ONNXRUNTIME_LIB_DIR}/libonnxruntime.so.1"
+    OR EXISTS "${BGOBS_ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib"
   )
     list(APPEND BGOBS_ONNXRUNTIME_SHLIBDEPS_PRIVATE_DIRS "${BGOBS_ONNXRUNTIME_LIB_DIR}")
   endif()
@@ -558,7 +763,14 @@ block(SCOPE_FOR POLICIES VARIABLES)
   set(SH_CONTENT "")
   set(PS1_CONTENT "")
 
-  foreach(VAR_NAME PLUGIN_BUNDLE_ID PLUGIN_DISPLAY_NAME PLUGIN_NAME PLUGIN_VERSION)
+  foreach(
+    VAR_NAME
+    PLUGIN_BUNDLE_ID
+    PLUGIN_DISPLAY_NAME
+    PLUGIN_NAME
+    PLUGIN_PACKAGE_VERSION
+    PLUGIN_VERSION
+  )
     set(VAR_VALUE "${${VAR_NAME}}")
     if(NOT VAR_VALUE MATCHES [[^[-A-Za-z0-9._ ]+$]])
       message(FATAL_ERROR "${VAR_NAME} contains unsupported characters: ${VAR_VALUE}")

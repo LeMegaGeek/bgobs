@@ -1,60 +1,122 @@
 ---
 // SPDX-FileCopyrightText: 2021-2026 Roy Shilkrot <roy.shil@gmail.com>
 // SPDX-FileCopyrightText: 2023-2026 Kaito Udagawa <umireon@kaito.tokyo>
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { joinURL } from "ufo";
+import { joinURL, withTrailingSlash } from "ufo";
 
 import "../styles/global.css";
+
+import {
+  GENERATED_CONTENT_URL,
+  GITHUB_URL,
+  LICENSE_URL,
+  PRODUCTION_BASE_URL,
+  RELEASES_URL,
+} from "../lib/info.js";
 
 const { BASE_URL } = import.meta.env;
 
 interface Props {
-  lang: string;
+  lang?: string;
   title: string;
+  description?: string;
+  canonical?: string;
+  noindex?: boolean;
 }
 
-const { lang, title } = Astro.props;
+const {
+  lang = "en",
+  title,
+  description = "BGOBS is an independent, open-source OBS Studio plugin for background effects and optional CaCam camera sources.",
+  canonical = PRODUCTION_BASE_URL,
+  noindex = false,
+} = Astro.props;
+
+const documentTitle = title === "BGOBS" ? title : `${title} · BGOBS`;
 ---
 
 <!doctype html>
 <html lang={lang}>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width" />
-
-    <title>{title}</title>
-    <slot name="head-info" />
-
-    <link
-      rel="icon"
-      type="image/png"
-      href={joinURL(BASE_URL, "favicon-96x96.png")}
-      sizes="96x96"
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#111827" />
+    <meta name="description" content={description} />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    {noindex && <meta name="robots" content="noindex, nofollow, noarchive" />}
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; connect-src 'none'; font-src 'self'; form-action 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; upgrade-insecure-requests"
     />
+
+    <title>{documentTitle}</title>
+    <link rel="canonical" href={withTrailingSlash(canonical)} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="BGOBS" />
+    <meta property="og:title" content={documentTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={withTrailingSlash(canonical)} />
+    <meta name="twitter:card" content="summary" />
+
     <link
       rel="icon"
       type="image/svg+xml"
       href={joinURL(BASE_URL, "favicon.svg")}
     />
-    <link rel="shortcut icon" href={joinURL(BASE_URL, "favicon.ico")} />
-    <link
-      rel="apple-touch-icon"
-      sizes="180x180"
-      href={joinURL(BASE_URL, "apple-touch-icon.png")}
-    />
 
     <slot name="head-bottom" />
   </head>
   <body>
-    <div>
-      <slot />
+    <a class="skip-link" href="#main-content">Skip to main content</a>
 
-      <footer>
-        <div>&copy; 2021 - 2026 Roy Shilkrot</div>
-      </footer>
+    <header class="site-header">
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a
+          class="brand"
+          href={withTrailingSlash(BASE_URL)}
+          aria-label="BGOBS home"
+        >
+          <span class="brand-mark" aria-hidden="true">BG</span>
+          <span>
+            <strong>BGOBS</strong>
+            <small>Beau Gosse for OBS</small>
+          </span>
+        </a>
+
+        <ul>
+          <li><a href={joinURL(BASE_URL, "usage/")}>Use BGOBS</a></li>
+          <li><a href={RELEASES_URL}>Releases</a></li>
+          <li>
+            <a href={joinURL(BASE_URL, "support/")}>Support &amp; security</a>
+          </li>
+          <li><a href={GITHUB_URL}>GitHub</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <div class="page-shell">
+      <slot />
     </div>
+
+    <footer class="site-footer">
+      <div>
+        <strong>BGOBS is independent software.</strong> It is not affiliated with
+        or endorsed by the OBS Project.
+      </div>
+      <nav aria-label="Footer navigation">
+        <a href={GITHUB_URL}>Source</a>
+        <a href={LICENSE_URL}>GPL-3.0-or-later</a>
+        <a href={GENERATED_CONTENT_URL}>AI-assisted content disclosure</a>
+      </nav>
+      <small>
+        Maintained by LeMegaGeek and contributors. OBS is a trademark of its
+        respective owner.
+      </small>
+    </footer>
 
     <slot name="body-bottom" />
   </body>

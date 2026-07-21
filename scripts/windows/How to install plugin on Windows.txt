@@ -16,9 +16,10 @@ PortableApps OBS Studio
 
 3. Restart OBS Studio and add the source:
 
-     CaCam USB
+     CaCam
 
-   libusb-1.0.dll must remain beside bgobs.dll for this source to be available.
+   libusb-1.0.dll must remain beside bgobs.dll for USB mode.
+   The adb folder must remain beside bgobs.dll for ADB mode.
 
 4. Unlock the phone, accept the Android USB prompt if it appears, and leave
    CaCam in the foreground until the first frame appears in OBS.
@@ -70,12 +71,13 @@ Manual PortableApps installation
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\libusb-1.0.dll
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
+     D:\PortableApps\OBS-StudioPortable\App\obs-studio\obs-plugins\64bit\adb\adb.exe
      D:\PortableApps\OBS-StudioPortable\App\obs-studio\data\obs-plugins\bgobs\models\
      D:\PortableApps\OBS-StudioPortable\Data\obs-plugins\bgobs\models\
 
 6. Restart OBS Studio and check the source list for:
 
-     CaCam USB
+     CaCam
 
    The video source filter list should also contain:
 

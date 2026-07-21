@@ -18,11 +18,6 @@ on:
         required: false
         type: number
         default: 0
-      environment:
-        description: The environment name for the build jobs, or empty string for no environment.
-        required: false
-        type: string
-        default: ''
       runs-on:
         description: The runner label to run this workflow on.
         required: true
@@ -54,8 +49,6 @@ permissions: {}
 
 jobs:
   build-macos:
-    # FIXME: Environments will be created later.
-    # environment: ${{ inputs.environment }}
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 180
 
@@ -64,8 +57,8 @@ jobs:
 
     env:
       DEVELOPER_DIR: '${{ inputs.DEVELOPER_DIR }}'
-      OSX_ARCHITECTURES: 'arm64;x86_64'
-      OSX_DEPLOYMENT_TARGET: '12.0'
+      CMAKE_OSX_ARCHITECTURES: 'arm64;x86_64'
+      CMAKE_OSX_DEPLOYMENT_TARGET: '12.0'
       VCPKG_BINARY_SOURCES: '${{ inputs.VCPKG_BINARY_SOURCES }}'
 
     steps:
@@ -79,6 +72,46 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+
+      - name: Detect macOS signing and notarization credentials
+        id: signing-mode
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          MACOS_NOTARIZATION_PASSWORD: '${{ secrets.MACOS_NOTARIZATION_PASSWORD }}'
+          MACOS_NOTARIZATION_USERNAME: '${{ secrets.MACOS_NOTARIZATION_USERNAME }}'
+          MACOS_SIGNING_APPLICATION_IDENTITY: '${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}'
+          MACOS_SIGNING_CERT_PASSWORD: '${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}'
+          MACOS_SIGNING_CERT: '${{ secrets.MACOS_SIGNING_CERT }}'
+          MACOS_SIGNING_INSTALLER_IDENTITY: '${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}'
+        run: |
+          missing=()
+          for name in \
+            MACOS_NOTARIZATION_PASSWORD \
+            MACOS_NOTARIZATION_USERNAME \
+            MACOS_SIGNING_APPLICATION_IDENTITY \
+            MACOS_SIGNING_CERT_PASSWORD \
+            MACOS_SIGNING_CERT \
+            MACOS_SIGNING_INSTALLER_IDENTITY; do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          enabled=false
+          signing_status=unsigned
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo 'Signing and notarization are disabled outside version tags.'
+          elif (( ${#missing[@]} == 0 )); then
+            enabled=true
+            signing_status=signed
+            echo 'All macOS credentials are available; signing and notarization are enabled.'
+          else
+            printf '::notice::Publishing an unsigned macOS package; missing credentials: %s\n' "${missing[*]}"
+          fi
+
+          {
+            echo "enabled=$enabled"
+            echo "signing-status=$signing_status"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Extract buildspec.props
         id: buildspec
@@ -154,6 +187,8 @@ jobs:
 
           build_obs_macos() {
             env -i \
+              CMAKE_OSX_ARCHITECTURES="$CMAKE_OSX_ARCHITECTURES" \
+              CMAKE_OSX_DEPLOYMENT_TARGET="$CMAKE_OSX_DEPLOYMENT_TARGET" \
               DEVELOPER_DIR="$DEVELOPER_DIR" \
               HOME="$HOME" \
               PATH="${CMAKE_EXE%/*}:/usr/bin:/bin:/usr/sbin:/sbin" \
@@ -261,6 +296,7 @@ jobs:
               CCACHE_DIR="$GITHUB_WORKSPACE/.ccache_ort" \
               CCACHE_BASEDIR="$GITHUB_WORKSPACE" \
               CCACHE_SLOPPINESS='include_file_mtime,time_macros' \
+              CMAKE_OSX_DEPLOYMENT_TARGET="$CMAKE_OSX_DEPLOYMENT_TARGET" \
               DEVELOPER_DIR="$DEVELOPER_DIR" \
               HOME="$HOME" \
               PATH="${CMAKE_EXE%/*}:${NINJA_EXE%/*}:${CCACHE_EXE%/*}:/usr/bin:/bin:/usr/sbin:/sbin" \
@@ -297,6 +333,8 @@ jobs:
 
       - name: Build Plugin (macOS)
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        env:
+          BGOBS_SIGNING_STATUS: '${{ steps.signing-mode.outputs.signing-status }}'
         run: |
           CMAKE_EXE="$(VCPKG_ROOT="$GITHUB_WORKSPACE/vcpkg" ./vcpkg/vcpkg fetch cmake | tail -n1)"
 
@@ -304,13 +342,26 @@ jobs:
             env -i \
               DEVELOPER_DIR="$DEVELOPER_DIR" \
               HOME="$HOME" \
-              PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+              PATH="${CMAKE_EXE%/*}:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+              PLUGIN_BUILD_DIR="$GITHUB_WORKSPACE" \
               VCPKG_BINARY_SOURCES="$VCPKG_BINARY_SOURCES" \
               "$CMAKE_EXE" "$@"
           }
 
-          plugin_cmake -G Xcode -S . -B build_plugin
+          plugin_cmake \
+            -G Xcode \
+            -S . \
+            -B build_plugin \
+            -DCMAKE_OSX_ARCHITECTURES="$CMAKE_OSX_ARCHITECTURES" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$CMAKE_OSX_DEPLOYMENT_TARGET" \
+            -DBGOBS_PACKAGE_SIGNING_STATUS="$BGOBS_SIGNING_STATUS" \
+            -DBUILD_TESTING=ON
           plugin_cmake --build build_plugin --config RelWithDebInfo | tee build_plugin_relwithdebinfo.log | xcbeautify
+
+      - name: Test Plugin (macOS)
+        shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        run: |
+          ctest --test-dir build_plugin -C RelWithDebInfo --output-on-failure
 
       - name: Upload Plugin build logs
         if: always()
@@ -334,10 +385,31 @@ jobs:
           . ./build_plugin/cmake_export.sh
 
           dsymutil "build_plugin/RelWithDebInfo/$PLUGIN_NAME.plugin/Contents/MacOS/$PLUGIN_NAME" -o "build_plugin/$PLUGIN_NAME.dSYM"
-          ZSTD_CLEVEL=19 tar -acf "release/$PLUGIN_NAME.dSYM.tar.zst" --mac-metadata "build_plugin/$PLUGIN_NAME.dSYM"
+          ZSTD_CLEVEL=19 tar -acf \
+            "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal-debug-symbols.tar.zst" \
+            --mac-metadata \
+            "build_plugin/$PLUGIN_NAME.dSYM"
+
+      - name: Validate staged plugin contents
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          BGOBS_SIGNING_STATUS: '${{ steps.signing-mode.outputs.signing-status }}'
+        run: |
+          . ./build_plugin/cmake_export.sh
+          python3 scripts/validate_package.py \
+            --root build_stage \
+            --platform macos \
+            --version "$PLUGIN_VERSION" \
+            --signing-status "$BGOBS_SIGNING_STATUS"
+
+          plugin_bundle='build_stage/Library/Application Support/obs-studio/plugins/bgobs.plugin/Contents'
+          libusb_runtime="$(find "$plugin_bundle/Frameworks" -type f -name 'libusb-1.0*.dylib' -print -quit)"
+          test -n "$libusb_runtime"
+          lipo -verify_arch arm64 x86_64 "$libusb_runtime"
+          otool -l "$plugin_bundle/MacOS/bgobs" | grep -A2 LC_RPATH | grep -F '@loader_path/../Frameworks'
 
       - name: Set up macOS Signing Certificates
-        if: inputs.environment == 'production-macos'
+        if: steps.signing-mode.outputs.enabled == 'true'
         id: codesign
         uses: ./.github/actions/setup-macos-codesigning
         with:
@@ -348,7 +420,7 @@ jobs:
       - name: Package Plugin (macOS)
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
         env:
-          CODESIGN_ENABLED: "${{ inputs.environment == 'production-macos' }}"
+          CODESIGN_ENABLED: '${{ steps.signing-mode.outputs.enabled }}'
           MACOS_SIGNING_APPLICATION_IDENTITY: ${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}
           MACOS_SIGNING_INSTALLER_IDENTITY: ${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}
         run: |
@@ -359,12 +431,13 @@ jobs:
 
           if [[ "$CODESIGN_ENABLED" == true ]]; then
             codesign -s "$MACOS_SIGNING_APPLICATION_IDENTITY" -f --deep --options runtime --timestamp "$PLUGIN_BUNDLE"
+            codesign --verify --deep --strict --verbose=2 "$PLUGIN_BUNDLE"
           fi
 
           pkgbuild \
             --root build_stage \
             --identifier "$PLUGIN_BUNDLE_ID" \
-            --version "$PLUGIN_VERSION" \
+            --version "$PLUGIN_PACKAGE_VERSION" \
             --install-location / \
             build_plugin/component.pkg
 
@@ -380,11 +453,20 @@ jobs:
               --distribution build_plugin/Distribution \
               --package-path build_plugin \
               --resources . \
-              "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal.pkg"
+              "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal-unsigned.pkg"
+          fi
+
+          if [[ "$CODESIGN_ENABLED" == true ]]; then
+            pkgutil --check-signature "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal.pkg"
+          elif pkgutil --check-signature "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal-unsigned.pkg"; then
+            echo 'Unsigned CI package unexpectedly has a valid installer signature.' >&2
+            exit 1
+          else
+            echo 'Produced an explicitly named unsigned macOS CI package.'
           fi
 
       - name: Notarize Installer
-        if: inputs.environment == 'production-macos'
+        if: steps.signing-mode.outputs.enabled == 'true'
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
         env:
           CODESIGN_TEAM: '${{ steps.codesign.outputs.CODESIGN_TEAM }}'
@@ -400,13 +482,13 @@ jobs:
             --wait
 
           xcrun stapler staple "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal.pkg"
+          xcrun stapler validate "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal.pkg"
+          spctl --assess --type install --verbose=2 "release/$PLUGIN_NAME-$PLUGIN_VERSION-macos-universal.pkg"
 
       - name: Upload Plugin Binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pluginbinary-${{ runner.os }}-universal-${{ github.run_id }}
-          path: |
-            release/*.pkg
-            release/*.dSYM.tar.zst
+          path: release
           if-no-files-found: error
           retention-days: 7

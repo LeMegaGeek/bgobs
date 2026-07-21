@@ -23,6 +23,7 @@ ORT_X86_64_BUILD_DIR="${ROOT_DIR}/.deps_vendor/ort_x86_64"
 ORT_X86_64_PREFIX="${ROOT_DIR}/.deps_vendor/ort_x86_64-prefix"
 
 ORT_COMPONENTS=(
+  onnxruntime
   onnxruntime_session
   onnxruntime_optimizer
   onnxruntime_providers
@@ -39,6 +40,7 @@ BUILD_PY_ARGS=(
   --cmake_generator Ninja
   --compile_no_warning_as_error
   --config Release
+  --build_shared_lib
   --disable_rtti
   --parallel
   --skip_submodule_sync
