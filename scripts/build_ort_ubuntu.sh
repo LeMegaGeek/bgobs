@@ -22,20 +22,6 @@ REDUCED_OPS_CONFIG="${ROOT_DIR}/src/required_operators_and_types.with_runtime_op
 ORT_X86_64_BUILD_DIR="${ROOT_DIR}/.deps_vendor/ort_x86_64"
 ORT_X86_64_PREFIX="${ROOT_DIR}/.deps_vendor/ort_x86_64-prefix"
 
-ORT_COMPONENTS=(
-  onnxruntime
-  onnxruntime_session
-  onnxruntime_optimizer
-  onnxruntime_providers
-  onnxruntime_lora
-  onnxruntime_framework
-  onnxruntime_graph
-  onnxruntime_util
-  onnxruntime_mlas
-  onnxruntime_common
-  onnxruntime_flatbuffers
-)
-
 BUILD_PY_ARGS=(
   --cmake_generator Ninja
   --compile_no_warning_as_error
@@ -78,10 +64,7 @@ run_build_py() {
 
   case "${arch}" in
   x86_64)
-    commandline+=(
-      --build_dir "${ORT_X86_64_BUILD_DIR}"
-      --targets "${ORT_COMPONENTS[@]}"
-    )
+    commandline+=(--build_dir "${ORT_X86_64_BUILD_DIR}")
     ;;
   *)
     echo "ERROR: Invalid arch ${arch}." >&2

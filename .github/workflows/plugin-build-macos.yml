@@ -174,6 +174,19 @@ jobs:
           ./vcpkg/vcpkg fetch cmake
           ./vcpkg/vcpkg fetch ninja
 
+      - name: Install autotools required by vcpkg ports
+        shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        env:
+          HOMEBREW_NO_ANALYTICS: '1'
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_ENV_HINTS: '1'
+        run: |
+          brew install autoconf autoconf-archive automake libtool
+          {
+            echo "HOMEBREW_BIN=$(brew --prefix)/bin"
+            echo "LIBTOOL_GNUBIN=$(brew --prefix libtool)/libexec/gnubin"
+          } >> "$GITHUB_ENV"
+
       - name: Build OBS (macOS)
         id: build-obs
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
@@ -217,7 +230,7 @@ jobs:
           env -i \
             DEVELOPER_DIR="$DEVELOPER_DIR" \
             HOME="$HOME" \
-            PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+            PATH="$LIBTOOL_GNUBIN:$HOMEBREW_BIN:/usr/bin:/bin:/usr/sbin:/sbin" \
             VCPKG_BINARY_SOURCES="$VCPKG_BINARY_SOURCES" \
             VCPKG_ROOT="$GITHUB_WORKSPACE/vcpkg" \
             ./vcpkg/vcpkg install --triplet=arm64-osx-obs --x-install-root=vcpkg_installed_arm64
@@ -228,7 +241,7 @@ jobs:
           env -i \
             DEVELOPER_DIR="$DEVELOPER_DIR" \
             HOME="$HOME" \
-            PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+            PATH="$LIBTOOL_GNUBIN:$HOMEBREW_BIN:/usr/bin:/bin:/usr/sbin:/sbin" \
             VCPKG_BINARY_SOURCES="$VCPKG_BINARY_SOURCES" \
             VCPKG_ROOT="$GITHUB_WORKSPACE/vcpkg" \
             ./vcpkg/vcpkg install --triplet=x64-osx-obs --x-install-root=vcpkg_installed_x64
