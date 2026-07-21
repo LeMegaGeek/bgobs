@@ -122,6 +122,7 @@ constexpr uint8_t LIBUSB_REQUEST_TYPE_VENDOR = 0x40;
 constexpr uint8_t LIBUSB_RECIPIENT_DEVICE = 0x00;
 constexpr uint8_t LIBUSB_TRANSFER_TYPE_MASK = 0x03;
 constexpr uint8_t LIBUSB_TRANSFER_TYPE_BULK = 0x02;
+constexpr uint8_t LIBUSB_CLASS_VIDEO = 0x0e;
 constexpr int LIBUSB_ERROR_TIMEOUT = -7;
 constexpr int LIBUSB_ERROR_NO_DEVICE = -4;
 
@@ -297,6 +298,28 @@ bool is_aoa_product(uint16_t vendor, uint16_t product)
 	}
 }
 
+bool has_video_interface(UsbApi &api, libusb_device *device)
+{
+	libusb_config_descriptor *config = nullptr;
+	if (api.get_active_config_descriptor(device, &config) != 0 || !config)
+		return false;
+
+	bool found = false;
+	for (uint8_t interface_index = 0; interface_index < config->bNumInterfaces && !found;
+	     ++interface_index) {
+		const libusb_interface &interface = config->interface[interface_index];
+		for (int alt_index = 0; alt_index < interface.num_altsetting; ++alt_index) {
+			if (interface.altsetting[alt_index].bInterfaceClass == LIBUSB_CLASS_VIDEO) {
+				found = true;
+				break;
+			}
+		}
+	}
+
+	api.free_config_descriptor(config);
+	return found;
+}
+
 uint16_t read_u16_le(const unsigned char *data)
 {
 	return static_cast<uint16_t>(data[0]) | static_cast<uint16_t>(data[1] << 8);
@@ -365,6 +388,11 @@ AccessoryRequestResult request_accessory_mode(UsbApi &api, libusb_device *device
 		return {};
 	if (is_aoa_product(descriptor.idVendor, descriptor.idProduct))
 		return {};
+	// A native UVC camera is already usable directly by OBS. Switching it to
+	// Android Open Accessory would remove the webcam and launch Android's
+	// accessory-app fallback instead.
+	if (has_video_interface(api, device))
+		return {};
 
 	AccessoryRequestResult request = {};
 	request.vendor = descriptor.idVendor;
@@ -396,7 +424,7 @@ AccessoryRequestResult request_accessory_mode(UsbApi &api, libusb_device *device
 		"CaCam USB",
 		"CaCam direct USB video source",
 		"1.0",
-		"https://github.com/LeMegaGeek/CaCam",
+		"https://lemegageek.github.io/",
 		"CaCam",
 	};
 	for (uint16_t index = 0; index < std::size(identifiers); ++index) {
