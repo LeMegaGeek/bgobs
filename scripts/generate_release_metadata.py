@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Validate the release asset set and generate checksums plus an SPDX SBOM."""
+"""Validate release assets and generate checksums plus an SPDX asset manifest."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def write_checksums(directory: Path, version: str, assets: list[Path]) -> Path:
     return output
 
 
-def write_sbom(directory: Path, version: str, assets: list[Path]) -> Path:
+def write_spdx_asset_manifest(directory: Path, version: str, assets: list[Path]) -> Path:
     file_entries = []
     relationships = [
         {
@@ -137,8 +137,8 @@ def write_sbom(directory: Path, version: str, assets: list[Path]) -> Path:
                 "packageVerificationCode": {
                     "packageVerificationCodeValue": verification_code,
                 },
-                "licenseConcluded": "GPL-3.0-or-later",
-                "licenseDeclared": "GPL-3.0-or-later",
+                "licenseConcluded": "NOASSERTION",
+                "licenseDeclared": "NOASSERTION",
                 "copyrightText": "NOASSERTION",
             }
         ],
@@ -161,12 +161,15 @@ def main() -> int:
         directory = args.artifact_dir.resolve(strict=True)
         assets = validate_assets(directory, args.version)
         checksum_path = write_checksums(directory, args.version, assets)
-        sbom_path = write_sbom(directory, args.version, assets)
+        spdx_manifest_path = write_spdx_asset_manifest(directory, args.version, assets)
     except (OSError, ValueError) as error:
         print(f"Release metadata generation failed: {error}", file=sys.stderr)
         return 1
 
-    print(f"Validated {len(assets)} assets and wrote {checksum_path.name} and {sbom_path.name}.")
+    print(
+        f"Validated {len(assets)} assets and wrote {checksum_path.name} "
+        f"and {spdx_manifest_path.name}."
+    )
     return 0
 
 

@@ -28,8 +28,12 @@ int getConfig(config_t **config)
 
 	// Get the config file
 	char *config_file_path = obs_module_config_path("config.ini");
+	if (!config_file_path) {
+		obs_log(LOG_ERROR, "Failed to get config file path");
+		return OBS_BGREMOVAL_CONFIG_FAIL;
+	}
 
-	int ret = config_open(config, config_file_path, CONFIG_OPEN_EXISTING);
+	int ret = config_open(config, config_file_path, CONFIG_OPEN_ALWAYS);
 	if (ret != CONFIG_SUCCESS) {
 		obs_log(LOG_INFO, "Failed to open config file %s", config_file_path);
 		bfree(config_file_path);
@@ -49,7 +53,17 @@ int getFlagFromConfig(const char *name, bool *returnValue, bool defaultValue)
 		return OBS_BGREMOVAL_CONFIG_FAIL;
 	}
 
-	*returnValue = config_get_bool(config, "config", name);
+	if (!config_has_user_value(config, "config", name)) {
+		config_set_bool(config, "config", name, defaultValue);
+		*returnValue = defaultValue;
+		if (config_save(config) != CONFIG_SUCCESS) {
+			obs_log(LOG_ERROR, "Failed to save default config value %s", name);
+			config_close(config);
+			return OBS_BGREMOVAL_CONFIG_FAIL;
+		}
+	} else {
+		*returnValue = config_get_bool(config, "config", name);
+	}
 	config_close(config);
 
 	return OBS_BGREMOVAL_CONFIG_SUCCESS;
@@ -64,7 +78,11 @@ int setFlagInConfig(const char *name, const bool value)
 	}
 
 	config_set_bool(config, "config", name, value);
-	config_save(config);
+	if (config_save(config) != CONFIG_SUCCESS) {
+		obs_log(LOG_ERROR, "Failed to save config value %s", name);
+		config_close(config);
+		return OBS_BGREMOVAL_CONFIG_FAIL;
+	}
 	config_close(config);
 
 	return OBS_BGREMOVAL_CONFIG_SUCCESS;

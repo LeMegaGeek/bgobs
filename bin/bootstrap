@@ -12,6 +12,7 @@ debian_forky() {
   apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
+    cargo \
     cmake \
     curl \
     file \
@@ -24,6 +25,7 @@ debian_forky() {
     libusb-1.0-0 \
     ninja-build \
     python3 \
+    rustc \
     tar \
     unzip \
     zip
@@ -34,6 +36,7 @@ ubuntu_resolute() {
   apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
+    cargo \
     cmake \
     curl \
     file \
@@ -46,13 +49,14 @@ ubuntu_resolute() {
     libusb-1.0-0 \
     ninja-build \
     python3 \
+    rustc \
     tar \
     unzip \
     zip
 }
 
 macos() {
-  brew install ccache python@3.13 xcbeautify
+  brew install ccache python@3.13 rust xcbeautify
 }
 
 case "$(uname -s)" in

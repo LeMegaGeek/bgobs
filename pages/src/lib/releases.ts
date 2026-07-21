@@ -11,13 +11,13 @@ export type Release = Awaited<
 export type ReleaseAsset = Release["assets"][number];
 
 export const ASSET_PATTERNS = {
-  windows: /^bgobs-[\w.-]+-windows-x64-unsigned\.zip$/i,
-  windowsSymbols: /^bgobs-[\w.-]+-windows-x64-debug-symbols\.zip$/i,
-  macos: /^bgobs-[\w.-]+-macos-universal(?:-unsigned)?\.pkg$/i,
-  macosUnsigned: /^bgobs-[\w.-]+-macos-universal-unsigned\.pkg$/i,
-  ubuntu: /^bgobs-[\w.-]+-linux-x86_64-unsigned\.deb$/i,
-  ubuntuSymbols: /^bgobs-[\w.-]+-linux-x86_64-debug-symbols\.ddeb$/i,
-  checksums: /^SHA256SUMS-[\w.-]+\.txt$/i,
+  windows: /^bgobs-[\w.+-]+-windows-x64-unsigned\.zip$/i,
+  windowsSymbols: /^bgobs-[\w.+-]+-windows-x64-debug-symbols\.zip$/i,
+  macos: /^bgobs-[\w.+-]+-macos-universal(?:-unsigned)?\.pkg$/i,
+  macosUnsigned: /^bgobs-[\w.+-]+-macos-universal-unsigned\.pkg$/i,
+  ubuntu: /^bgobs-[\w.+-]+-linux-x86_64-unsigned\.deb$/i,
+  ubuntuSymbols: /^bgobs-[\w.+-]+-linux-x86_64-debug-symbols\.ddeb$/i,
+  checksums: /^SHA256SUMS-[\w.+-]+\.txt$/i,
 } as const;
 
 let releasesPromise: Promise<Release[]> | undefined;
@@ -42,7 +42,9 @@ export function listBgobsReleases(): Promise<Release[]> {
             !release.draft &&
             release.published_at &&
             Date.parse(release.published_at) >= PUBLIC_BGOBS_RELEASE_EPOCH &&
-            /^v\d+\.\d+\.\d+$/.test(release.tag_name) &&
+            /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$/.test(
+              release.tag_name,
+            ) &&
             release.assets.some((asset) => asset.name.startsWith("bgobs-")),
         ),
       );
@@ -53,9 +55,11 @@ export function listBgobsReleases(): Promise<Release[]> {
 
 export async function getLatestBgobsRelease(): Promise<Release> {
   const releases = await listBgobsReleases();
-  const latest = releases[0];
+  const latest = releases.find((release) => !release.prerelease);
   if (!latest) {
-    throw new Error("No published BGOBS release with official assets found.");
+    throw new Error(
+      "No stable published BGOBS release with official assets found.",
+    );
   }
   return latest;
 }

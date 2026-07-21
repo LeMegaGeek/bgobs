@@ -164,12 +164,37 @@ constexpr int ADB_SNAPSHOT_TIMEOUT_MS = 1200;
 constexpr int ADB_HEALTH_TIMEOUT_MS = 800;
 constexpr int ADB_HEALTH_RETRY_COUNT = 30;
 constexpr int ADB_COMMAND_TIMEOUT_MS = 30000;
+constexpr int ADB_CLEANUP_TIMEOUT_MS = 2000;
 constexpr size_t MAX_ADB_COMMAND_OUTPUT_SIZE = 1024 * 1024;
 constexpr size_t MAX_HEALTH_RESPONSE_SIZE = 4 * 1024;
 constexpr size_t MAX_SNAPSHOT_RESPONSE_SIZE = 16 * 1024 * 1024;
+constexpr uint16_t MAX_JPEG_DIMENSION = 4096;
 constexpr const char *CACAM_PACKAGE_NAME = "fr.lemegageek.cacam";
 constexpr uint32_t DEFAULT_SOURCE_WIDTH = 1280;
 constexpr uint32_t DEFAULT_SOURCE_HEIGHT = 720;
+
+int64_t saturated_nonnegative_difference(int64_t upper, int64_t lower)
+{
+	if (upper <= lower)
+		return 0;
+
+	uint64_t difference = 0;
+	if (lower < 0 && upper >= 0) {
+		const uint64_t lower_magnitude = static_cast<uint64_t>(-(lower + 1)) + 1;
+		difference = lower_magnitude + static_cast<uint64_t>(upper);
+	} else {
+		difference = static_cast<uint64_t>(upper - lower);
+	}
+
+	return difference > static_cast<uint64_t>(INT64_MAX) ? INT64_MAX : static_cast<int64_t>(difference);
+}
+
+int64_t saturated_nonnegative_sum(int64_t left, int64_t right)
+{
+	if (left >= INT64_MAX - right)
+		return INT64_MAX;
+	return left + right;
+}
 
 std::pair<uint32_t, uint32_t> source_canvas_size()
 {
@@ -431,6 +456,49 @@ uint64_t read_u64_be(const unsigned char *data)
 	return value;
 }
 
+bool is_jpeg_start_of_frame_marker(uint8_t marker)
+{
+	return marker >= 0xc0 && marker <= 0xcf && marker != 0xc4 && marker != 0xc8 && marker != 0xcc;
+}
+
+bool jpeg_dimensions_are_safe(const std::vector<unsigned char> &jpeg)
+{
+	if (jpeg.size() < 4 || jpeg[0] != 0xff || jpeg[1] != 0xd8)
+		return false;
+
+	size_t offset = 2;
+	while (offset < jpeg.size()) {
+		if (jpeg[offset++] != 0xff)
+			return false;
+		while (offset < jpeg.size() && jpeg[offset] == 0xff)
+			++offset;
+		if (offset >= jpeg.size())
+			return false;
+
+		const uint8_t marker = jpeg[offset++];
+		if (marker == 0xd9 || marker == 0xda)
+			return false;
+		if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd8))
+			continue;
+		if (offset + 2 > jpeg.size())
+			return false;
+
+		const size_t segment_length = (static_cast<size_t>(jpeg[offset]) << 8) | jpeg[offset + 1];
+		if (segment_length < 2 || segment_length > jpeg.size() - offset)
+			return false;
+		if (is_jpeg_start_of_frame_marker(marker)) {
+			if (segment_length < 8)
+				return false;
+			const uint16_t height = (static_cast<uint16_t>(jpeg[offset + 3]) << 8) | jpeg[offset + 4];
+			const uint16_t width = (static_cast<uint16_t>(jpeg[offset + 5]) << 8) | jpeg[offset + 6];
+			return width > 0 && height > 0 && width <= MAX_JPEG_DIMENSION && height <= MAX_JPEG_DIMENSION;
+		}
+		offset += segment_length;
+	}
+
+	return false;
+}
+
 #ifdef _WIN32
 std::string plugin_module_directory()
 {
@@ -499,6 +567,34 @@ CacamQuality parse_quality(const char *value)
 	return CacamQuality::Standard;
 }
 
+bool is_valid_android_package_name(const std::string &value)
+{
+	if (value.empty())
+		return false;
+
+	bool segment_start = true;
+	bool saw_separator = false;
+	for (const unsigned char character : value) {
+		if (character == '.') {
+			if (segment_start)
+				return false;
+			segment_start = true;
+			saw_separator = true;
+			continue;
+		}
+		if (segment_start) {
+			if ((character < 'A' || character > 'Z') && (character < 'a' || character > 'z'))
+				return false;
+			segment_start = false;
+			continue;
+		}
+		if ((character < 'A' || character > 'Z') && (character < 'a' || character > 'z') &&
+		    (character < '0' || character > '9') && character != '_')
+			return false;
+	}
+	return !segment_start && saw_separator;
+}
+
 std::string obs_data_string(obs_data_t *settings, const char *name)
 {
 	const char *value = obs_data_get_string(settings, name);
@@ -531,7 +627,8 @@ std::string shell_quote(const std::string &value)
 }
 
 std::string run_command_capture(const std::string &command, int *exit_code = nullptr,
-				const std::atomic<bool> *stop_requested = nullptr)
+				const std::atomic<bool> *stop_requested = nullptr,
+				int timeout_ms = ADB_COMMAND_TIMEOUT_MS)
 {
 	std::string output;
 #ifdef _WIN32
@@ -576,7 +673,7 @@ std::string run_command_capture(const std::string &command, int *exit_code = nul
 	std::array<char, 512> buffer = {};
 	bool timed_out = false;
 	bool cancelled = false;
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ADB_COMMAND_TIMEOUT_MS);
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
 	for (;;) {
 		DWORD available = 0;
 		if (!PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &available, nullptr))
@@ -657,7 +754,7 @@ std::string run_command_capture(const std::string &command, int *exit_code = nul
 		fcntl(output_pipe[0], F_SETFL, current_flags | O_NONBLOCK);
 
 	std::array<char, 512> buffer = {};
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ADB_COMMAND_TIMEOUT_MS);
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
 	bool pipe_closed = false;
 	bool child_exited = false;
 	bool timed_out = false;
@@ -669,7 +766,8 @@ std::string run_command_capture(const std::string &command, int *exit_code = nul
 			const ssize_t bytes_read = read(output_pipe[0], buffer.data(), buffer.size());
 			if (bytes_read > 0) {
 				const size_t remaining = MAX_ADB_COMMAND_OUTPUT_SIZE - output.size();
-				output.append(buffer.data(), std::min<size_t>(static_cast<size_t>(bytes_read), remaining));
+				output.append(buffer.data(),
+					      std::min<size_t>(static_cast<size_t>(bytes_read), remaining));
 				continue;
 			}
 			if (bytes_read == 0)
@@ -681,7 +779,7 @@ std::string run_command_capture(const std::string &command, int *exit_code = nul
 
 		if (!child_exited) {
 			const pid_t wait_result = waitpid(child, &child_status, WNOHANG);
-			if (wait_result == child)
+			if (wait_result == child || (wait_result < 0 && errno == ECHILD))
 				child_exited = true;
 		}
 		if (child_exited && pipe_closed)
@@ -704,7 +802,8 @@ std::string run_command_capture(const std::string &command, int *exit_code = nul
 				}
 				child_exited = true;
 			}
-			continue;
+			pipe_closed = true;
+			break;
 		}
 
 		pollfd descriptor = {output_pipe[0], POLLIN | POLLHUP, 0};
@@ -770,7 +869,8 @@ size_t curl_write_vector(void *contents, size_t size, size_t nmemb, void *user_d
 		return 0;
 	const size_t byte_count = size * nmemb;
 	auto *buffer = static_cast<CurlResponseBuffer *>(user_data);
-	if (!buffer || !buffer->output || byte_count > buffer->limit - buffer->output->size())
+	if (!buffer || !buffer->output || buffer->output->size() > buffer->limit ||
+	    byte_count > buffer->limit - buffer->output->size())
 		return 0;
 	const auto *bytes = static_cast<unsigned char *>(contents);
 	buffer->output->insert(buffer->output->end(), bytes, bytes + byte_count);
@@ -780,10 +880,7 @@ size_t curl_write_vector(void *contents, size_t size, size_t nmemb, void *user_d
 bool http_get_binary(const std::string &url, long timeout_ms, size_t response_limit,
 		     std::vector<unsigned char> &response)
 {
-	static std::once_flag curl_init_flag;
-	static CURLcode curl_init_result = CURLE_FAILED_INIT;
-	std::call_once(curl_init_flag, [] { curl_init_result = curl_global_init(CURL_GLOBAL_DEFAULT); });
-	if (curl_init_result != CURLE_OK || response_limit == 0)
+	if (response_limit == 0)
 		return false;
 
 	CURL *curl = curl_easy_init();
@@ -800,6 +897,15 @@ bool http_get_binary(const std::string &url, long timeout_ms, size_t response_li
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeout_ms);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+	curl_easy_setopt(curl, CURLOPT_PROXY, "");
+	curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
+	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+#if LIBCURL_VERSION_NUM >= 0x075500
+	curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http");
+#else
+	curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP);
+#endif
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
 
 	const CURLcode code = curl_easy_perform(curl);
 	long http_code = 0;
@@ -1261,8 +1367,11 @@ private:
 			value.adb_path = default_adb_path();
 		value.adb_serial = obs_data_string(settings, "adb_serial");
 		value.package_name = obs_data_string(settings, "adb_package_name");
-		if (value.package_name.empty())
+		if (!is_valid_android_package_name(value.package_name)) {
+			if (!value.package_name.empty())
+				obs_log(LOG_WARNING, "[CaCam ADB] Ignoring an invalid Android package name");
 			value.package_name = CACAM_PACKAGE_NAME;
+		}
 		value.adb_local_port = static_cast<int>(obs_data_get_int(settings, "adb_local_port"));
 		if (value.adb_local_port <= 0)
 			value.adb_local_port = ADB_LOCAL_PORT_DEFAULT;
@@ -1366,8 +1475,8 @@ private:
 
 		const std::string forward_arguments =
 			"forward tcp:" + local_port + " tcp:" + std::to_string(settings.adb_device_port);
-		const std::string forward_output =
-			run_command_capture(adb_command(adb_path, serial, forward_arguments), &exit_code, &stop_requested);
+		const std::string forward_output = run_command_capture(adb_command(adb_path, serial, forward_arguments),
+								       &exit_code, &stop_requested);
 		if (exit_code != 0) {
 			obs_log(LOG_ERROR, "[CaCam ADB] Cannot create ADB forward tcp:%d -> tcp:%d: %s",
 				settings.adb_local_port, settings.adb_device_port, forward_output.c_str());
@@ -1381,8 +1490,8 @@ private:
 			" --es connection ADB --es quality " + shell_quote(info.intent_value) + " --ei fps " +
 			std::to_string(info.fps) + " --ez bgobs_optimized " +
 			(settings.bgobs_optimized ? "true" : "false") + " --ez start_stream true";
-		const std::string launch_output =
-			run_command_capture(adb_command(adb_path, serial, launch_arguments), &exit_code, &stop_requested);
+		const std::string launch_output = run_command_capture(adb_command(adb_path, serial, launch_arguments),
+								      &exit_code, &stop_requested);
 		if (exit_code != 0) {
 			obs_log(LOG_ERROR, "[CaCam ADB] Cannot launch CaCam on %s: %s", serial.c_str(),
 				launch_output.c_str());
@@ -1418,7 +1527,7 @@ private:
 		int exit_code = 0;
 		run_command_capture(adb_command(adb_path, serial,
 						"forward --remove tcp:" + std::to_string(settings.adb_local_port)),
-				    &exit_code, &stop_requested);
+				    &exit_code, nullptr, ADB_CLEANUP_TIMEOUT_MS);
 		UNUSED_PARAMETER(exit_code);
 	}
 
@@ -1650,16 +1759,24 @@ private:
 				const std::string text(payload.begin(), payload.end());
 				log_verbose("[CaCam USB] Connected: %s", text.c_str());
 			} else if (type == CACAM_TYPE_NV21) {
-				const int64_t clock_offset_us = static_cast<int64_t>(os_gettime_ns() / 1000) -
-								static_cast<int64_t>(timestamp_us);
+				const uint64_t now_us = os_gettime_ns() / 1000;
+				if (timestamp_us > static_cast<uint64_t>(INT64_MAX) ||
+				    now_us > static_cast<uint64_t>(INT64_MAX)) {
+					obs_log(LOG_WARNING, "[CaCam USB] Invalid frame timestamp");
+					continue;
+				}
+				const int64_t clock_offset_us =
+					static_cast<int64_t>(now_us) - static_cast<int64_t>(timestamp_us);
 				if (minimum_clock_offset_us == INT64_MAX || clock_offset_us < minimum_clock_offset_us) {
 					minimum_clock_offset_us = clock_offset_us;
 				} else {
-					minimum_clock_offset_us += std::min(clock_offset_us - minimum_clock_offset_us,
-									    MAX_CLOCK_BASELINE_STEP_US);
+					const int64_t baseline_difference = saturated_nonnegative_difference(
+						clock_offset_us, minimum_clock_offset_us);
+					minimum_clock_offset_us +=
+						std::min(baseline_difference, MAX_CLOCK_BASELINE_STEP_US);
 				}
 				const int64_t transport_backlog_us =
-					std::max<int64_t>(0, clock_offset_us - minimum_clock_offset_us);
+					saturated_nonnegative_difference(clock_offset_us, minimum_clock_offset_us);
 				int64_t sender_queue_us = 0;
 				if (payload.size() >= CACAM_FRAME_METADATA_SIZE) {
 					const uint64_t frame_timestamp_us = read_u64_be(payload.data() + 8);
@@ -1668,7 +1785,8 @@ private:
 						sender_queue_us =
 							static_cast<int64_t>(timestamp_us - frame_timestamp_us);
 				}
-				const int64_t frame_age_us = sender_queue_us + transport_backlog_us;
+				const int64_t frame_age_us =
+					saturated_nonnegative_sum(sender_queue_us, transport_backlog_us);
 				if (frame_age_us > MAX_FRAME_AGE_US) {
 					++dropped_frames;
 					if (dropped_frames == 1 || dropped_frames % 60 == 0) {
@@ -1692,7 +1810,7 @@ private:
 
 	bool output_jpeg(const std::vector<unsigned char> &jpeg)
 	{
-		if (jpeg.empty())
+		if (jpeg.empty() || !jpeg_dimensions_are_safe(jpeg))
 			return false;
 
 		const cv::Mat encoded(1, static_cast<int>(jpeg.size()), CV_8UC1,

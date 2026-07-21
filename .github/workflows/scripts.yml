@@ -85,5 +85,15 @@ jobs:
       - name: Install
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
         run: |
-          dpkg -i release/obs-backgroundremoval_*.deb
-          dpkg -L obs-backgroundremoval
+          mapfile -t runtime_packages < <(
+            find build_plugin/release -maxdepth 1 -type f -name '*.deb' ! -name '*dbgsym*' -print
+          )
+          if [[ ${#runtime_packages[@]} -ne 1 ]]; then
+            echo "Expected exactly one BGOBS runtime package." >&2
+            find build_plugin/release -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+
+          package_name="$(dpkg-deb --field "${runtime_packages[0]}" Package)"
+          dpkg --install "${runtime_packages[0]}"
+          dpkg --listfiles "$package_name"

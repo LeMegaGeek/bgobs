@@ -6,6 +6,7 @@
 
 #include "update-checker.h"
 #include "github-utils.hpp"
+#include "semver.hpp"
 #include "../obs-utils/obs-config-utils.hpp"
 
 #include <obs-frontend-api.h>
@@ -29,8 +30,6 @@ void check_update(void)
 	if (getFlagFromConfig("check_for_updates", &shouldCheckForUpdates, false) != OBS_BGREMOVAL_CONFIG_SUCCESS) {
 		// Failed to get the config value; keep update checks disabled by default.
 		shouldCheckForUpdates = false;
-		// store the default value
-		setFlagInConfig("check_for_updates", shouldCheckForUpdates);
 	}
 
 	if (!shouldCheckForUpdates) {
@@ -45,8 +44,14 @@ void check_update(void)
 		}
 		obs_log(LOG_INFO, "Latest release is %s", info.version.c_str());
 
-		if (info.version == PLUGIN_VERSION) {
-			// No update available, latest version is the same as the current version
+		const std::optional<int> comparison = bgobs::compareSemanticVersions(info.version, PLUGIN_VERSION);
+		if (!comparison) {
+			obs_log(LOG_WARNING, "Ignoring release with invalid semantic version %s", info.version.c_str());
+			return;
+		}
+
+		if (*comparison <= 0) {
+			// No update is available when the remote version is equal to or older than this build.
 			std::lock_guard<std::mutex> lock(latestVersionMutex);
 			latestVersionForUpdate.clear();
 			return;

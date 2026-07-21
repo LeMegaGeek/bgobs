@@ -32,6 +32,22 @@ on:
         description: The ONNX Runtime version.
         required: true
         type: string
+      ort-sha256:
+        description: The SHA-256 of the ONNX Runtime Windows x64 archive.
+        required: true
+        type: string
+      platform-tools-version:
+        description: The Android platform-tools version.
+        required: true
+        type: string
+      platform-tools-url:
+        description: The versioned Android platform-tools Windows x64 URL.
+        required: true
+        type: string
+      platform-tools-sha256:
+        description: The SHA-256 of the Android platform-tools archive.
+        required: true
+        type: string
 
 permissions: {}
 
@@ -166,6 +182,9 @@ jobs:
         shell: pwsh
         env:
           PATH: '${{ env.FILTERED_PATH }}'
+          PLATFORM_TOOLS_SHA256: '${{ inputs.platform-tools-sha256 }}'
+          PLATFORM_TOOLS_URL: '${{ inputs.platform-tools-url }}'
+          PLATFORM_TOOLS_VERSION: '${{ inputs.platform-tools-version }}'
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
@@ -176,12 +195,22 @@ jobs:
           $VendorDir = Join-Path $pwd '.deps_vendor'
           $Archive = Join-Path $VendorDir 'platform-tools-windows.zip'
           $ExtractDir = Join-Path $VendorDir 'platform-tools-windows'
-          $Url = 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip'
+          $Url = $env:PLATFORM_TOOLS_URL
+          $ExpectedHash = $env:PLATFORM_TOOLS_SHA256.ToLowerInvariant()
 
           New-Item -ItemType Directory -Path $VendorDir -Force
           Invoke-WebRequest -Uri $Url -OutFile $Archive
+          $ActualHash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($ActualHash -cne $ExpectedHash) {
+            throw "SHA-256 mismatch for Android platform-tools: expected $ExpectedHash, got $ActualHash"
+          }
           Remove-Item -Path $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -Path $Archive -DestinationPath $ExtractDir -Force
+
+          $Properties = Get-Content -LiteralPath "$ExtractDir\platform-tools\source.properties"
+          if ($Properties -cnotcontains "Pkg.Revision=$env:PLATFORM_TOOLS_VERSION") {
+            throw "Unexpected Android platform-tools version; expected $env:PLATFORM_TOOLS_VERSION"
+          }
 
           foreach ($RequiredPath in @(
             "$ExtractDir\platform-tools\adb.exe",
@@ -210,6 +239,7 @@ jobs:
       - name: Download ONNX Runtime (Windows x64)
         shell: pwsh
         env:
+          ORT_SHA256: '${{ inputs.ort-sha256 }}'
           PATH: '${{ env.FILTERED_PATH }}'
         run: |
           $ErrorActionPreference = 'Stop'
@@ -226,11 +256,20 @@ jobs:
           $SourceDir = Join-Path $ExtractDir "onnxruntime-win-x64-$OrtVersion"
           $PrefixDir = Join-Path $VendorDir 'ort_x64-prefix'
           $Url = "https://github.com/microsoft/onnxruntime/releases/download/$OrtTag/onnxruntime-win-x64-$OrtVersion.zip"
+          $ExpectedHash = $env:ORT_SHA256.ToLowerInvariant()
 
           New-Item -ItemType Directory -Path $VendorDir -Force
           Invoke-WebRequest -Uri $Url -OutFile $Archive
+          $ActualHash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($ActualHash -cne $ExpectedHash) {
+            throw "SHA-256 mismatch for ONNX Runtime: expected $ExpectedHash, got $ActualHash"
+          }
           Remove-Item -Path $ExtractDir, $PrefixDir -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -Path $Archive -DestinationPath $ExtractDir -Force
+          $EmbeddedVersion = (Get-Content -LiteralPath "$SourceDir\VERSION_NUMBER" -Raw).Trim()
+          if ($EmbeddedVersion -cne $OrtVersion) {
+            throw "Unexpected ONNX Runtime version: expected $OrtVersion, got $EmbeddedVersion"
+          }
           New-Item -ItemType Directory -Path $PrefixDir -Force
           Copy-Item -Path "$SourceDir\*" -Destination $PrefixDir -Recurse -Force
 

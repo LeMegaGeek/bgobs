@@ -51,7 +51,9 @@ artifacts must come from the tagged commit, not from an uncommitted local tree.
 
 Do not claim a platform in the README or release announcement merely because a
 workflow file exists. A platform is published for that version only after its
-build, packaging checks, and appropriate manual smoke test pass.
+build, native tests, and package validation pass. Record manual smoke-test
+coverage separately and never imply that an unperformed platform smoke test
+succeeded.
 
 ## 5. Inspect the draft release
 
@@ -64,10 +66,12 @@ For every artifact that will be published:
 - scan for source trees, credentials, developer paths, crash dumps, and other
   accidental files;
 - generate and verify SHA-256 checksums;
-- install it on a clean or representative OBS setup and perform a smoke test.
+- when that platform is available, install it on a clean or representative OBS
+  setup and perform a smoke test, recording exactly which package was tested.
 
 Keep debug-symbol packages separate and label them clearly. Publish only the
-artifacts that passed. Release notes must distinguish verified binaries from
+artifacts that passed the automated release gate. Release notes must
+distinguish CI-validated packages, manually smoke-tested packages, and
 source-only or pending platforms.
 
 ## 6. Publish and verify

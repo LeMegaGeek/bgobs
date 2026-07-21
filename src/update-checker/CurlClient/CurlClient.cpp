@@ -44,6 +44,7 @@ void fetchStringFromUrl(const char *urlString, std::function<void(std::string, i
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 10000L);
 	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
 	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 5L);
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
 #if LIBCURL_VERSION_NUM >= 0x075500
 	curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");

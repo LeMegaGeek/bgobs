@@ -468,9 +468,10 @@ obs_properties_t *background_filter_properties(void *data)
 	// use std::regex_replace instead of QString::arg because the latter doesn't work on Linux
 	std::string basic_info = std::regex_replace(PLUGIN_INFO_TEMPLATE, std::regex("%1"), PLUGIN_VERSION);
 	// Check for update
-	if (get_latest_version() != nullptr) {
-		basic_info += std::regex_replace(PLUGIN_INFO_TEMPLATE_UPDATE_AVAILABLE, std::regex("%1"),
-						 get_latest_version());
+	const char *latest_version = get_latest_version();
+	if (latest_version != nullptr) {
+		basic_info +=
+			std::regex_replace(PLUGIN_INFO_TEMPLATE_UPDATE_AVAILABLE, std::regex("%1"), latest_version);
 	}
 	obs_properties_add_text(props, "info", basic_info.c_str(), OBS_TEXT_INFO);
 
@@ -568,46 +569,53 @@ void background_filter_update(void *data, obs_data_t *settings)
 	const std::string newModel = obs_data_get_string(settings, "model_select");
 	const uint32_t newNumThreads = (uint32_t)obs_data_get_int(settings, "numThreads");
 
-	if (tf->modelSelection.empty() || tf->modelSelection != newModel || tf->useGPU != newUseGpu ||
-	    tf->numThreads != newNumThreads) {
-		// lock modelMutex
+	std::string modelSelectionForLog;
+	std::string useGpuForLog;
+	uint32_t numThreadsForLog = 0;
+#ifdef _WIN32
+	std::wstring modelFilepathForLog;
+#else
+	std::string modelFilepathForLog;
+#endif
+	{
 		std::unique_lock<std::mutex> lock(tf->modelMutex);
+		if (tf->modelSelection.empty() || tf->modelSelection != newModel || tf->useGPU != newUseGpu ||
+		    tf->numThreads != newNumThreads) {
 
-		// Re-initialize model if it's not already the selected one or switching inference device
-		tf->modelSelection = newModel;
-		tf->useGPU = newUseGpu;
-		tf->numThreads = newNumThreads;
+			// Re-initialize model if it is not already selected or the inference device changed.
+			tf->modelSelection = newModel;
+			tf->useGPU = newUseGpu;
+			tf->numThreads = newNumThreads;
 
-		if (tf->modelSelection == MODEL_SINET) {
-			tf->model.reset(new ModelSINET);
-		}
-		if (tf->modelSelection == MODEL_SELFIE) {
-			tf->model.reset(new ModelSelfie);
-		}
-		if (tf->modelSelection == MODEL_SELFIE_MULTICLASS) {
-			tf->model.reset(new ModelSelfieMulticlass);
-		}
-		if (tf->modelSelection == MODEL_MEDIAPIPE) {
-			tf->model.reset(new ModelMediaPipe);
-		}
-		if (tf->modelSelection == MODEL_RVM) {
-			tf->model.reset(new ModelRVM);
-		}
-		if (tf->modelSelection == MODEL_PPHUMANSEG) {
-			tf->model.reset(new ModelPPHumanSeg);
-		}
-		if (tf->modelSelection == MODEL_DEPTH_TCMONODEPTH) {
-			tf->model.reset(new ModelTCMonoDepth);
+			if (tf->modelSelection == MODEL_SINET)
+				tf->model.reset(new ModelSINET);
+			if (tf->modelSelection == MODEL_SELFIE)
+				tf->model.reset(new ModelSelfie);
+			if (tf->modelSelection == MODEL_SELFIE_MULTICLASS)
+				tf->model.reset(new ModelSelfieMulticlass);
+			if (tf->modelSelection == MODEL_MEDIAPIPE)
+				tf->model.reset(new ModelMediaPipe);
+			if (tf->modelSelection == MODEL_RVM)
+				tf->model.reset(new ModelRVM);
+			if (tf->modelSelection == MODEL_PPHUMANSEG)
+				tf->model.reset(new ModelPPHumanSeg);
+			if (tf->modelSelection == MODEL_DEPTH_TCMONODEPTH)
+				tf->model.reset(new ModelTCMonoDepth);
+
+			const int ortSessionResult = createOrtSession(tf.get());
+			if (ortSessionResult != OBS_BGREMOVAL_ORT_SESSION_SUCCESS) {
+				obs_log(LOG_ERROR, "Failed to create ONNXRuntime session. Error code: %d",
+					ortSessionResult);
+				tf->isDisabled = true;
+				tf->model.reset();
+				return;
+			}
 		}
 
-		int ortSessionResult = createOrtSession(tf.get());
-		if (ortSessionResult != OBS_BGREMOVAL_ORT_SESSION_SUCCESS) {
-			obs_log(LOG_ERROR, "Failed to create ONNXRuntime session. Error code: %d", ortSessionResult);
-			// disable filter
-			tf->isDisabled = true;
-			tf->model.reset();
-			return;
-		}
+		modelSelectionForLog = tf->modelSelection;
+		useGpuForLog = tf->useGPU;
+		numThreadsForLog = tf->numThreads;
+		modelFilepathForLog = tf->modelFilepath;
 	}
 
 	obs_enter_graphics();
@@ -629,9 +637,9 @@ void background_filter_update(void *data, obs_data_t *settings)
 	// name of the source that the filter is attached to
 	obs_log(LOG_INFO, "  Source: %s", obs_source_get_name(tf->source));
 	obs_log(LOG_INFO, "  Preset: %s", tf->beautyPreset.c_str());
-	obs_log(LOG_INFO, "  Model: %s", tf->modelSelection.c_str());
-	obs_log(LOG_INFO, "  Inference Device: %s", tf->useGPU.c_str());
-	obs_log(LOG_INFO, "  Num Threads: %d", tf->numThreads);
+	obs_log(LOG_INFO, "  Model: %s", modelSelectionForLog.c_str());
+	obs_log(LOG_INFO, "  Inference Device: %s", useGpuForLog.c_str());
+	obs_log(LOG_INFO, "  Num Threads: %u", numThreadsForLog);
 	obs_log(LOG_INFO, "  Enable Threshold: %s", tf->enableThreshold.load() ? "true" : "false");
 	obs_log(LOG_INFO, "  Threshold: %f", tf->threshold.load());
 	obs_log(LOG_INFO, "  Edge Softness: %f", tf->edgeSoftness.load());
@@ -651,9 +659,9 @@ void background_filter_update(void *data, obs_data_t *settings)
 	obs_log(LOG_INFO, "  Blur Focus Depth: %f", tf->blurFocusDepth.load());
 	obs_log(LOG_INFO, "  Disabled: %s", tf->isDisabled ? "true" : "false");
 #ifdef _WIN32
-	obs_log(LOG_INFO, "  Model file path: %S", tf->modelFilepath.c_str());
+	obs_log(LOG_INFO, "  Model file path: %S", modelFilepathForLog.c_str());
 #else
-	obs_log(LOG_INFO, "  Model file path: %s", tf->modelFilepath.c_str());
+	obs_log(LOG_INFO, "  Model file path: %s", modelFilepathForLog.c_str());
 #endif
 
 	// enable

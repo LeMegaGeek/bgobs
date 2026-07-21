@@ -7,6 +7,7 @@
  */
 
 #include <obs-module.h>
+#include <curl/curl.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -22,6 +23,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 extern struct obs_source_info bgobs_background_filter_info;
 extern struct obs_source_info enhance_filter_info;
 extern struct obs_source_info cacam_usb_source_info;
+static bool curl_initialized = false;
 
 static void log_module_paths(void)
 {
@@ -50,6 +52,13 @@ static void log_module_paths(void)
 
 bool obs_module_load(void)
 {
+	const CURLcode curl_result = curl_global_init(CURL_GLOBAL_DEFAULT);
+	if (curl_result != CURLE_OK) {
+		obs_log(LOG_ERROR, "Failed to initialize libcurl: %s", curl_easy_strerror(curl_result));
+		return false;
+	}
+	curl_initialized = true;
+
 	obs_register_source(&bgobs_background_filter_info);
 	obs_register_source(&enhance_filter_info);
 	obs_register_source(&cacam_usb_source_info);
@@ -64,5 +73,9 @@ bool obs_module_load(void)
 void obs_module_unload()
 {
 	shutdown_update_checker();
+	if (curl_initialized) {
+		curl_global_cleanup();
+		curl_initialized = false;
+	}
 	obs_log(LOG_INFO, "plugin unloaded");
 }

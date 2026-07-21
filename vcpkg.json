@@ -13,7 +13,7 @@
       "name": "curl",
       "default-features": false,
       "features": [
-        "wolfssl"
+        "ssl"
       ],
       "platform": "((uwp | !windows) & !mingw) & !osx"
     },

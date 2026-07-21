@@ -32,6 +32,12 @@ jobs:
       VCPKG_BINARY_SOURCES: ${{ steps.config.outputs.VCPKG_BINARY_SOURCES }}
       VCPKG_VERSION: ${{ steps.config.outputs.VCPKG_VERSION }}
       ORT_VERSION: ${{ steps.config.outputs.ORT_VERSION }}
+      ORT_WINDOWS_SHA256: ${{ steps.config.outputs.ORT_WINDOWS_SHA256 }}
+      OBS_LINUX_SHA256: ${{ steps.config.outputs.OBS_LINUX_SHA256 }}
+      OBS_VERSION: ${{ steps.config.outputs.OBS_VERSION }}
+      PLATFORM_TOOLS_SHA256: ${{ steps.config.outputs.PLATFORM_TOOLS_SHA256 }}
+      PLATFORM_TOOLS_URL: ${{ steps.config.outputs.PLATFORM_TOOLS_URL }}
+      PLATFORM_TOOLS_VERSION: ${{ steps.config.outputs.PLATFORM_TOOLS_VERSION }}
       VERSION: ${{ steps.config.outputs.VERSION }}
 
     steps:
@@ -49,6 +55,12 @@ jobs:
           manifest_version="$(python3 -c 'import json; print(json.load(open("data/manifest.json", encoding="utf-8"))["version"])')"
           vcpkg_version="$(awk -F= '$1 == "vcpkg_git_tag" { print $2 }' buildspec.props)"
           ort_version="$(awk -F= '$1 == "onnxruntime_git_tag" { print $2 }' buildspec.props)"
+          ort_windows_sha256="$(awk -F= '$1 == "onnxruntime_windows_x64_sha256" { print $2 }' buildspec.props)"
+          platform_tools_version="$(awk -F= '$1 == "platform_tools_windows_x64_version" { print $2 }' buildspec.props)"
+          platform_tools_url="$(awk -F= '$1 == "platform_tools_windows_x64_url" { print $2 }' buildspec.props)"
+          platform_tools_sha256="$(awk -F= '$1 == "platform_tools_windows_x64_sha256" { print $2 }' buildspec.props)"
+          obs_version="$(python3 -c 'import json; print(json.load(open("buildspec.json", encoding="utf-8"))["dependencies"]["obs-studio"]["version"])')"
+          obs_linux_sha256="$(python3 -c 'import json; print(json.load(open("buildspec.json", encoding="utf-8"))["dependencies"]["obs-studio"]["hashes"]["linux-x86_64"])')"
 
           semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$'
           if [[ ! "$version" =~ $semver ]]; then
@@ -61,6 +73,31 @@ jobs:
           fi
           if [[ -z "$vcpkg_version" || -z "$ort_version" ]]; then
             echo "Pinned dependency versions are missing from buildspec.props." >&2
+            exit 1
+          fi
+          if [[ ! "$ort_windows_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid pinned ONNX Runtime Windows SHA-256." >&2
+            exit 1
+          fi
+          if [[ ! "$platform_tools_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid pinned Android platform-tools version." >&2
+            exit 1
+          fi
+          expected_platform_tools_url="https://dl.google.com/android/repository/platform-tools_r${platform_tools_version}-win.zip"
+          if [[ "$platform_tools_url" != "$expected_platform_tools_url" ]]; then
+            echo "Android platform-tools must use its pinned official versioned URL." >&2
+            exit 1
+          fi
+          if [[ ! "$platform_tools_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid pinned Android platform-tools SHA-256." >&2
+            exit 1
+          fi
+          if [[ ! "$obs_version" =~ $semver ]]; then
+            echo "Invalid pinned OBS Studio version: $obs_version" >&2
+            exit 1
+          fi
+          if [[ ! "$obs_linux_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid pinned OBS Studio Linux SHA-256." >&2
             exit 1
           fi
 
@@ -77,12 +114,21 @@ jobs:
               echo "Missing release notes: release-notes/$GITHUB_REF_NAME.md" >&2
               exit 1
             fi
+            vcpkg_binary_sources='clear'
+          else
+            vcpkg_binary_sources='clear;http,https://vcpkg-obs.kaito.tokyo/{name}/{version}/{sha},read'
           fi
 
           {
-            echo "VCPKG_BINARY_SOURCES=clear;http,https://vcpkg-obs.kaito.tokyo/{name}/{version}/{sha},read"
+            echo "VCPKG_BINARY_SOURCES=$vcpkg_binary_sources"
             echo "VCPKG_VERSION=$vcpkg_version"
             echo "ORT_VERSION=$ort_version"
+            echo "ORT_WINDOWS_SHA256=$ort_windows_sha256"
+            echo "OBS_LINUX_SHA256=$obs_linux_sha256"
+            echo "OBS_VERSION=$obs_version"
+            echo "PLATFORM_TOOLS_SHA256=$platform_tools_sha256"
+            echo "PLATFORM_TOOLS_URL=$platform_tools_url"
+            echo "PLATFORM_TOOLS_VERSION=$platform_tools_version"
             echo "VERSION=$version"
           } >> "$GITHUB_OUTPUT"
 
@@ -96,9 +142,26 @@ jobs:
       VCPKG_BINARY_SOURCES: ${{ needs.config.outputs.VCPKG_BINARY_SOURCES }}
       vcpkg-version: ${{ needs.config.outputs.VCPKG_VERSION }}
       ort-version: ${{ needs.config.outputs.ORT_VERSION }}
+      ort-sha256: ${{ needs.config.outputs.ORT_WINDOWS_SHA256 }}
+      platform-tools-version: ${{ needs.config.outputs.PLATFORM_TOOLS_VERSION }}
+      platform-tools-url: ${{ needs.config.outputs.PLATFORM_TOOLS_URL }}
+      platform-tools-sha256: ${{ needs.config.outputs.PLATFORM_TOOLS_SHA256 }}
 
   build-macos:
     name: macOS universal
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    needs: config
+    permissions:
+      contents: read
+    uses: ./.github/workflows/plugin-build-macos.yml
+    with:
+      runs-on: macos-15
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app
+      VCPKG_BINARY_SOURCES: ${{ needs.config.outputs.VCPKG_BINARY_SOURCES }}
+
+  build-macos-release:
+    name: macOS universal release
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: config
     permissions:
       contents: read
@@ -119,10 +182,18 @@ jobs:
       VCPKG_BINARY_SOURCES: ${{ needs.config.outputs.VCPKG_BINARY_SOURCES }}
       vcpkg-version: ${{ needs.config.outputs.VCPKG_VERSION }}
       ort-version: ${{ needs.config.outputs.ORT_VERSION }}
+      obs-version: ${{ needs.config.outputs.OBS_VERSION }}
+      obs-sha256: ${{ needs.config.outputs.OBS_LINUX_SHA256 }}
 
   accept-plugin:
     name: Accept tested packages
-    needs: [build-windows, build-macos, build-ubuntu]
+    if: >-
+      always() &&
+      needs['build-windows'].result == 'success' &&
+      needs['build-ubuntu'].result == 'success' &&
+      (needs['build-macos'].result == 'success' ||
+      needs['build-macos-release'].result == 'success')
+    needs: [build-windows, build-macos, build-macos-release, build-ubuntu]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:

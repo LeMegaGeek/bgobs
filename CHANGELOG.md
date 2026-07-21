@@ -28,6 +28,8 @@ BGOBS fork remain available in Git history and their original tags.
 - Added bounds and timeouts to USB, ADB HTTP, and update-metadata handling.
 - Required HTTPS and bounded response sizes for release metadata.
 - Hardened source shutdown and reconnection against stale worker callbacks.
+- Pinned and verified external archives used by the Windows and Linux release
+  builds.
 
 ## 0.3.18
 

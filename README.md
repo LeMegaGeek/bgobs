@@ -30,17 +30,18 @@ background filters or enhancement tools.
 
 ## Install
 
-Release assets that complete their platform build and smoke test are published
-on [GitHub Releases](https://github.com/LeMegaGeek/bgobs/releases). Use only a
+Release assets that complete their platform build, native tests, and package
+validation are published on
+[GitHub Releases](https://github.com/LeMegaGeek/bgobs/releases). Use only a
 package actually attached to the selected release. Depending on the release,
 the available artifact types can include:
 
-- **Windows x64:** extract the ZIP and copy the `bgobs` plugin folder into the
-  OBS plugin directory. The ZIP also contains helpers for OBS PortableApps.
-- **macOS:** run the `.pkg` installer whose architecture and minimum macOS
-  version are stated on that release.
-- **Ubuntu x86_64:** install the `.deb` package built for the stated Ubuntu
-  version.
+- **Windows 10 or 11 x64:** extract the ZIP and copy the `bgobs` plugin folder
+  into the OBS plugin directory. The ZIP also contains helpers for OBS
+  PortableApps.
+- **macOS 12 or later:** run the universal `.pkg` installer for Intel and Apple
+  silicon Macs.
+- **Ubuntu 24.04 x86_64:** install the `.deb` package with APT.
 
 If a platform has no attached artifact, BGOBS makes no binary-support claim for
 that platform in that version; use the source and build documentation instead.

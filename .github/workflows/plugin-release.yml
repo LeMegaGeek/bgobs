@@ -44,7 +44,7 @@ jobs:
           merge-multiple: true
           path: ${{ steps.secure-dir.outputs.ARTIFACTS_DIR }}
 
-      - name: Validate assets and generate checksums and SBOM
+      - name: Validate assets and generate checksums and SPDX asset manifest
         shell: bash --noprofile --norc -euo pipefail {0}
         env:
           ARTIFACTS_DIR: '${{ steps.secure-dir.outputs.ARTIFACTS_DIR }}'
@@ -58,7 +58,7 @@ jobs:
             --artifact-dir "$ARTIFACTS_DIR" \
             --version "$version"
 
-      - name: Attest packages, checksums, and SBOM
+      - name: Attest packages, checksums, and SPDX asset manifest
         id: attest
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
@@ -113,6 +113,25 @@ jobs:
             echo "The aggregated release is missing expected metadata or packages." >&2
             exit 1
           fi
+
+          declare -A expected_assets=()
+          for asset in "${assets[@]}"; do
+            expected_assets["$(basename "$asset")"]=1
+          done
+          unexpected_assets=()
+          while IFS= read -r existing_asset; do
+            [[ -n "$existing_asset" ]] || continue
+            if [[ -z "${expected_assets[$existing_asset]+present}" ]]; then
+              unexpected_assets+=("$existing_asset")
+            fi
+          done < <(gh release view "$tag" --json assets --jq '.assets[].name')
+          if (( ${#unexpected_assets[@]} > 0 )); then
+            echo "The release already contains assets outside this verified build:" >&2
+            printf '  %s\n' "${unexpected_assets[@]}" >&2
+            echo "Remove or preserve them explicitly before rerunning the release." >&2
+            exit 1
+          fi
+
           gh release upload "$tag" "${assets[@]}" --clobber
 
           edit_flags=(--title "BGOBS $version" --notes-file "$notes_file")

@@ -29,6 +29,14 @@ on:
         description: The ONNX Runtime version.
         required: true
         type: string
+      obs-version:
+        description: The exact OBS Studio release used for headers and libraries.
+        required: true
+        type: string
+      obs-sha256:
+        description: SHA-256 of the official OBS Studio Ubuntu package.
+        required: true
+        type: string
 
 permissions: {}
 
@@ -95,20 +103,47 @@ jobs:
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
         run: |
           APT_PACKAGES=(
+            curl
             libgles2-mesa-dev
             libopencv-imgcodecs-dev
             libusb-1.0-0
             libqt6svg6-dev
             libsimde-dev
-            obs-studio
             qt6-base-dev
             qt6-base-private-dev
           )
           echo "man-db man-db/auto-update boolean false" | sudo debconf-set-selections
           sudo apt-get remove --purge -y man-db
-          sudo add-apt-repository -y ppa:obsproject/obs-studio
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends "${APT_PACKAGES[@]}"
+
+      - name: Install pinned OBS Studio (Ubuntu x86_64)
+        shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        env:
+          OBS_SHA256: '${{ inputs.obs-sha256 }}'
+          OBS_VERSION: '${{ inputs.obs-version }}'
+        run: |
+          obs_package="OBS-Studio-$OBS_VERSION-Ubuntu-24.04-x86_64.deb"
+          obs_url="https://github.com/obsproject/obs-studio/releases/download/$OBS_VERSION/$obs_package"
+
+          curl \
+            --fail \
+            --location \
+            --proto '=https' \
+            --retry 5 \
+            --show-error \
+            --silent \
+            --tlsv1.2 \
+            --output "$obs_package" \
+            "$obs_url"
+          printf '%s  %s\n' "$OBS_SHA256" "$obs_package" | sha256sum --check --strict
+          sudo apt-get install -y --no-install-recommends "./$obs_package"
+
+          installed_version="$(dpkg-query --show --showformat='${Version}' obs-studio)"
+          if [[ "$installed_version" != "$OBS_VERSION" ]]; then
+            echo "Installed OBS Studio $installed_version, expected $OBS_VERSION." >&2
+            exit 1
+          fi
 
       - name: Install dependencies from vcpkg (Ubuntu x86_64)
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}

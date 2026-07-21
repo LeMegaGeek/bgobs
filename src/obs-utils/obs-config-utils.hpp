@@ -12,12 +12,13 @@ enum {
 };
 
 /**
- * Get a boolean flasg from the module configuration file.
+ * Get a boolean flag from the module configuration file. If the value does not
+ * exist yet, persist and return the supplied default.
  *
  * @param name The name of the config item.
  * @param returnValue The value of the config item.
  * @param defaultValue The default value of the config item.
- * @return OBS_BGREMOVAL_CONFIG_SUCCESS if the config item was found,
+ * @return OBS_BGREMOVAL_CONFIG_SUCCESS if the value was read or initialized,
  * OBS_BGREMOVAL_CONFIG_FAIL otherwise.
  */
 int getFlagFromConfig(const char *name, bool *returnValue, bool defaultValue);

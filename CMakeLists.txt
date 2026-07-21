@@ -429,6 +429,7 @@ set(
   src/obs-utils/obs-utils.cpp
   src/obs-utils/obs-config-utils.cpp
   src/update-checker/github-utils.cpp
+  src/update-checker/semver.cpp
   src/update-checker/update-checker.cpp
   ${BACKGROUND_FILTER_SOURCES}
   ${ENHANCE_FILTER_SOURCES}
@@ -474,6 +475,10 @@ if(BUILD_TESTING)
   target_include_directories(mask-post-processing-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_link_libraries(mask-post-processing-test PRIVATE OpenCV::opencv_core OpenCV::opencv_imgproc bgobs_core)
   add_test(NAME mask-post-processing COMMAND mask-post-processing-test)
+
+  add_executable(semver-test tests/update-checker/semver-test.cpp src/update-checker/semver.cpp)
+  target_include_directories(semver-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  add_test(NAME semver COMMAND semver-test)
 endif()
 
 ### Hide symbols
@@ -506,6 +511,45 @@ set(
 
 set(GENERAL_DATA_FILES data/config.json data/manifest.json)
 set(LEGAL_FILES LICENSE NOTICE THIRD_PARTY_NOTICES.md)
+
+function(bgobs_install_vcpkg_copyrights DESTINATION)
+  set(BGOBS_VCPKG_SHARE_DIRS)
+  set(BGOBS_VCPKG_COPYRIGHTS_REQUIRED FALSE)
+
+  if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    list(APPEND BGOBS_VCPKG_SHARE_DIRS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share")
+    set(BGOBS_VCPKG_COPYRIGHTS_REQUIRED TRUE)
+  endif()
+
+  if(APPLE)
+    list(APPEND BGOBS_VCPKG_SHARE_DIRS "${PLUGIN_BUILD_DIR}/vcpkg_installed/universal-osx-obs/share")
+    set(BGOBS_VCPKG_COPYRIGHTS_REQUIRED TRUE)
+  elseif(MSVC)
+    list(APPEND BGOBS_VCPKG_SHARE_DIRS "${PLUGIN_BUILD_DIR}/.deps_vendor/libusb_installed/x64-windows/share")
+  endif()
+
+  list(REMOVE_DUPLICATES BGOBS_VCPKG_SHARE_DIRS)
+  set(BGOBS_VCPKG_COPYRIGHT_COUNT 0)
+  foreach(BGOBS_VCPKG_SHARE_DIR IN LISTS BGOBS_VCPKG_SHARE_DIRS)
+    if(NOT IS_DIRECTORY "${BGOBS_VCPKG_SHARE_DIR}")
+      continue()
+    endif()
+    file(GLOB BGOBS_VCPKG_COPYRIGHT_FILES LIST_DIRECTORIES FALSE "${BGOBS_VCPKG_SHARE_DIR}/*/copyright")
+    foreach(BGOBS_VCPKG_COPYRIGHT IN LISTS BGOBS_VCPKG_COPYRIGHT_FILES)
+      get_filename_component(BGOBS_VCPKG_PORT_DIR "${BGOBS_VCPKG_COPYRIGHT}" DIRECTORY)
+      get_filename_component(BGOBS_VCPKG_PORT_NAME "${BGOBS_VCPKG_PORT_DIR}" NAME)
+      install(
+        FILES "${BGOBS_VCPKG_COPYRIGHT}"
+        DESTINATION "${DESTINATION}/third-party-licenses/vcpkg/${BGOBS_VCPKG_PORT_NAME}"
+      )
+      math(EXPR BGOBS_VCPKG_COPYRIGHT_COUNT "${BGOBS_VCPKG_COPYRIGHT_COUNT} + 1")
+    endforeach()
+  endforeach()
+
+  if(BGOBS_VCPKG_COPYRIGHTS_REQUIRED AND BGOBS_VCPKG_COPYRIGHT_COUNT EQUAL 0)
+    message(FATAL_ERROR "No vcpkg copyright files were found for the packaged static dependencies")
+  endif()
+endfunction()
 
 set(
   LOCALE_FILES
@@ -573,8 +617,13 @@ if(APPLE)
   set_source_files_properties(${MODELS_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/models")
   target_sources(
     ${CMAKE_PROJECT_NAME}
-    PRIVATE ${GENERAL_DATA_FILES} ${LEGAL_FILES} "${BGOBS_SIGNING_STATUS_FILE}" ${EFFECTS_FILES} ${LOCALE_FILES}
-            ${MODELS_FILES}
+    PRIVATE
+      ${GENERAL_DATA_FILES}
+      ${LEGAL_FILES}
+      "${BGOBS_SIGNING_STATUS_FILE}"
+      ${EFFECTS_FILES}
+      ${LOCALE_FILES}
+      ${MODELS_FILES}
   )
 
   install(
@@ -596,6 +645,9 @@ if(APPLE)
   install(
     DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/LICENSES"
     DESTINATION "Library/Application Support/obs-studio/plugins/${CMAKE_PROJECT_NAME}.plugin/Contents/Resources"
+  )
+  bgobs_install_vcpkg_copyrights(
+    "Library/Application Support/obs-studio/plugins/${CMAKE_PROJECT_NAME}.plugin/Contents/Resources"
   )
   install(
     FILES "${BGOBS_ONNXRUNTIME_COPYRIGHT}"
@@ -646,6 +698,7 @@ elseif(MSVC)
   set_target_properties_plugin(${CMAKE_PROJECT_NAME})
   install(FILES ${LEGAL_FILES} "${BGOBS_SIGNING_STATUS_FILE}" DESTINATION "${CMAKE_PROJECT_NAME}/data")
   install(DIRECTORY LICENSES DESTINATION "${CMAKE_PROJECT_NAME}/data")
+  bgobs_install_vcpkg_copyrights("${CMAKE_PROJECT_NAME}/data")
   install(FILES "${BGOBS_ONNXRUNTIME_COPYRIGHT}" DESTINATION "${CMAKE_PROJECT_NAME}/data" RENAME onnxruntime-copyright)
   if(BGOBS_ONNXRUNTIME_NOTICES)
     install(
@@ -689,6 +742,7 @@ elseif(OS_LINUX MATCHES "(Debian|Ubuntu)")
     DESTINATION "${OBS_PLUGIN_DATA_DIR}"
   )
   install(DIRECTORY LICENSES DESTINATION "${OBS_PLUGIN_DATA_DIR}")
+  bgobs_install_vcpkg_copyrights("${OBS_PLUGIN_DATA_DIR}")
   install(FILES ${LOCALE_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/locale")
   install(FILES ${MODELS_FILES} DESTINATION "${OBS_PLUGIN_DATA_DIR}/models" OPTIONAL)
   install(FILES LICENSE DESTINATION "${OBS_PLUGIN_DOC_DIR}" RENAME copyright)
