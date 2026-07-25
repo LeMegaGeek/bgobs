@@ -365,20 +365,59 @@ set(
 
 file(GLOB_RECURSE BGOBS_CORE_RUST_SOURCES CONFIGURE_DEPENDS "${BGOBS_CORE_CRATE_DIR}/src/*.rs")
 
-add_custom_command(
-  OUTPUT "${BGOBS_CORE_STATIC_LIBRARY}"
-  COMMAND
-    "${CARGO_EXECUTABLE}" build --manifest-path "${BGOBS_CORE_CRATE_DIR}/Cargo.toml" --target-dir
-    "${BGOBS_CORE_CARGO_TARGET_DIR}" ${BGOBS_CORE_CARGO_BUILD_ARGS}
-  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-  DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.lock"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml"
-    "${BGOBS_CORE_CRATE_DIR}/Cargo.toml"
-    ${BGOBS_CORE_RUST_SOURCES}
-  COMMENT "Building Rust crate bgobs-core"
-  VERBATIM
-)
+list(FIND CMAKE_OSX_ARCHITECTURES "arm64" BGOBS_CORE_ARM64_INDEX)
+list(FIND CMAKE_OSX_ARCHITECTURES "x86_64" BGOBS_CORE_X86_64_INDEX)
+
+if(APPLE AND BGOBS_CORE_ARM64_INDEX GREATER_EQUAL 0 AND BGOBS_CORE_X86_64_INDEX GREATER_EQUAL 0)
+  find_program(LIPO_EXECUTABLE lipo REQUIRED)
+  set(BGOBS_CORE_ARM64_TARGET_DIR "${BGOBS_CORE_CARGO_TARGET_DIR}/arm64")
+  set(BGOBS_CORE_X86_64_TARGET_DIR "${BGOBS_CORE_CARGO_TARGET_DIR}/x86_64")
+  set(
+    BGOBS_CORE_ARM64_LIBRARY
+    "${BGOBS_CORE_ARM64_TARGET_DIR}/aarch64-apple-darwin/${BGOBS_CORE_CARGO_PROFILE}/libbgobs_core.a"
+  )
+  set(
+    BGOBS_CORE_X86_64_LIBRARY
+    "${BGOBS_CORE_X86_64_TARGET_DIR}/x86_64-apple-darwin/${BGOBS_CORE_CARGO_PROFILE}/libbgobs_core.a"
+  )
+
+  add_custom_command(
+    OUTPUT "${BGOBS_CORE_STATIC_LIBRARY}"
+    COMMAND
+      "${CARGO_EXECUTABLE}" build --manifest-path "${BGOBS_CORE_CRATE_DIR}/Cargo.toml" --target aarch64-apple-darwin
+      --target-dir "${BGOBS_CORE_ARM64_TARGET_DIR}" ${BGOBS_CORE_CARGO_BUILD_ARGS}
+    COMMAND
+      "${CARGO_EXECUTABLE}" build --manifest-path "${BGOBS_CORE_CRATE_DIR}/Cargo.toml" --target x86_64-apple-darwin
+      --target-dir "${BGOBS_CORE_X86_64_TARGET_DIR}" ${BGOBS_CORE_CARGO_BUILD_ARGS}
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${BGOBS_CORE_CARGO_TARGET_DIR}/${BGOBS_CORE_CARGO_PROFILE}"
+    COMMAND
+      "${LIPO_EXECUTABLE}" -create "${BGOBS_CORE_ARM64_LIBRARY}" "${BGOBS_CORE_X86_64_LIBRARY}" -output
+      "${BGOBS_CORE_STATIC_LIBRARY}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.lock"
+      "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml"
+      "${BGOBS_CORE_CRATE_DIR}/Cargo.toml"
+      ${BGOBS_CORE_RUST_SOURCES}
+    COMMENT "Building universal Rust crate bgobs-core"
+    VERBATIM
+  )
+else()
+  add_custom_command(
+    OUTPUT "${BGOBS_CORE_STATIC_LIBRARY}"
+    COMMAND
+      "${CARGO_EXECUTABLE}" build --manifest-path "${BGOBS_CORE_CRATE_DIR}/Cargo.toml" --target-dir
+      "${BGOBS_CORE_CARGO_TARGET_DIR}" ${BGOBS_CORE_CARGO_BUILD_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.lock"
+      "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml"
+      "${BGOBS_CORE_CRATE_DIR}/Cargo.toml"
+      ${BGOBS_CORE_RUST_SOURCES}
+    COMMENT "Building Rust crate bgobs-core"
+    VERBATIM
+  )
+endif()
 
 add_custom_target(bgobs-core-rust DEPENDS "${BGOBS_CORE_STATIC_LIBRARY}")
 add_library(bgobs_core INTERFACE)

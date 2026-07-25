@@ -344,6 +344,11 @@ jobs:
         run: |
           ccache -s
 
+      - name: Install Rust targets (macOS)
+        shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Build Plugin (macOS)
         shell: bash --noprofile --norc -euo pipefail -O nullglob {0}
         env:
