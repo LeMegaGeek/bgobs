@@ -56,28 +56,46 @@ const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
         </div>
       </div>
 
-      <aside class="hero-card" aria-label="Latest BGOBS release">
-        <span class="badge latest">Latest release</span>
-        <h2>{release.tag_name}</h2>
-        {
-          release.published_at && (
-            <p>
-              Published{" "}
-              <local-date data-date={release.published_at}>
-                <time datetime={release.published_at}>
-                  {release.published_at}
-                </time>
-              </local-date>
-            </p>
-          )
-        }
-        <ul>
-          <li class:list={{ available: windowsAsset }}>Windows x64</li>
-          <li class:list={{ available: macosAsset }}>macOS universal</li>
-          <li class:list={{ available: ubuntuAsset }}>Ubuntu x86_64</li>
-        </ul>
-        <small>Green dots indicate an installer in this exact release.</small>
-      </aside>
+      <div class="hero-visual">
+        <picture>
+          <source
+            media="(max-width: 590px)"
+            srcset={joinURL(BASE_URL, "bgobs-logo-horizontal-600x200.png")}
+            width="600"
+            height="200"
+          />
+          <img
+            class="hero-logo"
+            src={joinURL(BASE_URL, "bgobs-logo-principal-512x512.png")}
+            width="512"
+            height="512"
+            alt="BGOBS mascot styling his hair in front of a webcam"
+            fetchpriority="high"
+          />
+        </picture>
+        <aside class="hero-card" aria-label="Latest BGOBS release">
+          <span class="badge latest">Latest release</span>
+          <h2>{release.tag_name}</h2>
+          {
+            release.published_at && (
+              <p>
+                Published{" "}
+                <local-date data-date={release.published_at}>
+                  <time datetime={release.published_at}>
+                    {release.published_at}
+                  </time>
+                </local-date>
+              </p>
+            )
+          }
+          <ul>
+            <li class:list={{ available: windowsAsset }}>Windows x64</li>
+            <li class:list={{ available: macosAsset }}>macOS universal</li>
+            <li class:list={{ available: ubuntuAsset }}>Ubuntu x86_64</li>
+          </ul>
+          <small>Green dots indicate an installer in this exact release.</small>
+        </aside>
+      </div>
     </section>
 
     <section class="section-block" aria-labelledby="features-title">

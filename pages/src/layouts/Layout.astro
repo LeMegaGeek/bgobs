@@ -60,12 +60,23 @@ const documentTitle = title === "BGOBS" ? title : `${title} · BGOBS`;
     <meta property="og:title" content={documentTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={withTrailingSlash(canonical)} />
-    <meta name="twitter:card" content="summary" />
+    <meta
+      property="og:image"
+      content={joinURL(
+        PRODUCTION_BASE_URL,
+        "bgobs-logo-horizontal-1200x400.png",
+      )}
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="400" />
+    <meta property="og:image:alt" content="BGOBS — Beau Gosse for OBS" />
+    <meta name="twitter:card" content="summary_large_image" />
 
     <link
       rel="icon"
-      type="image/svg+xml"
-      href={joinURL(BASE_URL, "favicon.svg")}
+      type="image/png"
+      sizes="64x64"
+      href={joinURL(BASE_URL, "bgobs-icone-64x64.png")}
     />
 
     <slot name="head-bottom" />
@@ -80,7 +91,13 @@ const documentTitle = title === "BGOBS" ? title : `${title} · BGOBS`;
           href={withTrailingSlash(BASE_URL)}
           aria-label="BGOBS home"
         >
-          <span class="brand-mark" aria-hidden="true">BG</span>
+          <img
+            class="brand-mark"
+            src={joinURL(BASE_URL, "bgobs-icone-64x64.png")}
+            width="64"
+            height="64"
+            alt=""
+          />
           <span>
             <strong>BGOBS</strong>
             <small>Beau Gosse for OBS</small>

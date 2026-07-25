@@ -14,9 +14,9 @@
   --line: #2a354a;
   --text: #f7f9fc;
   --muted: #b8c2d4;
-  --accent: #ff8a1f;
-  --accent-bright: #ffad5c;
-  --accent-ink: #271100;
+  --accent: #55d72f;
+  --accent-bright: #a7f973;
+  --accent-ink: #071705;
   --cyan: #55d9ee;
   --success: #86efac;
   --warning: #ffd486;
@@ -54,7 +54,7 @@ body {
   background:
     radial-gradient(
       circle at 12% -10%,
-      rgb(255 138 31 / 18%),
+      rgb(85 215 47 / 20%),
       transparent 30rem
     ),
     radial-gradient(circle at 88% 2%, rgb(85 217 238 / 12%), transparent 28rem),
@@ -169,17 +169,12 @@ pre,
 }
 
 .brand-mark {
-  display: grid;
   width: 2.6rem;
   height: 2.6rem;
-  color: var(--accent-ink);
-  border-radius: 0.8rem 0.8rem 0.8rem 0.2rem;
-  background: linear-gradient(135deg, var(--accent-bright), var(--accent));
-  box-shadow: 0 0 28px rgb(255 138 31 / 30%);
-  font-size: 0.82rem;
-  font-weight: 900;
-  letter-spacing: -0.04em;
-  place-items: center;
+  border: 1px solid rgb(167 249 115 / 35%);
+  border-radius: 0.75rem;
+  box-shadow: 0 0 28px rgb(85 215 47 / 28%);
+  object-fit: cover;
 }
 
 .brand strong,
@@ -237,11 +232,32 @@ pre,
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(17rem, 0.65fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(22rem, 0.85fr);
   align-items: center;
   min-height: 32rem;
   padding: clamp(1rem, 4vw, 3rem) 0 clamp(3rem, 8vw, 6rem);
   gap: clamp(2rem, 6vw, 5rem);
+}
+
+.hero-visual {
+  position: relative;
+  width: min(100%, 32rem);
+  margin-inline: auto;
+  padding: 0 0 7.5rem;
+}
+
+.hero-visual picture {
+  display: block;
+}
+
+.hero-logo {
+  display: block;
+  width: 100%;
+  border: 1px solid rgb(167 249 115 / 28%);
+  border-radius: 1.6rem;
+  box-shadow:
+    0 32px 90px rgb(0 0 0 / 50%),
+    0 0 70px rgb(85 215 47 / 12%);
 }
 
 .hero h1 {
@@ -258,7 +274,10 @@ pre,
 }
 
 .hero-card {
-  position: relative;
+  position: absolute;
+  right: -1.5rem;
+  bottom: -1rem;
+  left: 2.5rem;
   padding: 1.5rem;
   overflow: hidden;
   border: 1px solid #3d4b63;
@@ -275,7 +294,7 @@ pre,
   height: 10rem;
   content: "";
   border-radius: 50%;
-  background: rgb(255 138 31 / 18%);
+  background: rgb(85 215 47 / 18%);
   filter: blur(8px);
 }
 
@@ -345,8 +364,8 @@ pre,
 }
 
 .accent-card {
-  border-color: #75451e;
-  background: linear-gradient(145deg, rgb(91 48 12 / 45%), rgb(8 11 18 / 45%));
+  border-color: #387d2b;
+  background: linear-gradient(145deg, rgb(34 91 24 / 45%), rgb(8 11 18 / 45%));
 }
 
 .prose h1,
@@ -445,7 +464,7 @@ pre,
 
 .button.primary:hover,
 .download-links a.primary:hover {
-  color: #190b00;
+  color: #031001;
   filter: brightness(1.08);
 }
 
@@ -614,6 +633,10 @@ pre,
     min-height: auto;
   }
 
+  .hero-visual {
+    width: min(100%, 34rem);
+  }
+
   .two-up {
     grid-template-columns: 1fr;
   }
@@ -640,6 +663,18 @@ pre,
 
   .content-panel {
     border-radius: 1rem;
+  }
+
+  .hero-visual {
+    padding-bottom: 0;
+  }
+
+  .hero-card {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    margin-top: 1rem;
   }
 
   .button,

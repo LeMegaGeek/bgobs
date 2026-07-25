@@ -45,6 +45,14 @@ path = "Cargo.lock"
 SPDX-FileCopyrightText = "2026 LeMegaGeek <d.github@chey.net>"
 SPDX-License-Identifier = "CC0-1.0"
 
+[[annotations]]
+path = [
+    "images/*.png",
+    "images/README.txt",
+]
+SPDX-FileCopyrightText = "2026 LeMegaGeek <d.github@chey.net>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
 # Locale files (reuse tool has some bug around reading not-ASCII files)
 [[annotations]]
 path = [

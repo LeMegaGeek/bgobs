@@ -17,3 +17,13 @@ SPDX-FileCopyrightText = [
     "2023-2026 Kaito Udagawa <umireon@kaito.tokyo>",
 ]
 SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = [
+    "public/bgobs-icone-64x64.png",
+    "public/bgobs-logo-horizontal-1200x400.png",
+    "public/bgobs-logo-horizontal-600x200.png",
+    "public/bgobs-logo-principal-512x512.png",
+]
+SPDX-FileCopyrightText = "2026 LeMegaGeek <d.github@chey.net>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
