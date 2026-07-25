@@ -26,7 +26,7 @@ const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
 <Layout
   lang="en"
   title="BGOBS"
-  description="BGOBS (Beau Gosse) is an independent, open-source OBS Studio plugin for background removal, background blur, low-light enhancement, and optional CaCam USB or ADB sources."
+  description="BGOBS (Beau Gosse OBS) is an independent, open-source OBS Studio plugin for background removal, background blur, low-light enhancement, and optional CaCam USB or ADB sources."
   canonical={PRODUCTION_BASE_URL}
 >
   <Fragment slot="head-bottom">
@@ -41,9 +41,9 @@ const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
           Look sharp on camera.<br /><span>Stay in control.</span>
         </h1>
         <p class="lede">
-          BGOBS — “Beau Gosse” — is a third-party plugin for OBS Studio. Remove
-          or blur a background, improve a dim portrait, and optionally bring a
-          CaCam phone feed into OBS over USB or ADB.
+          BGOBS — “Beau Gosse OBS” — is a third-party plugin for OBS Studio.
+          Remove or blur a background, improve a dim portrait, and optionally
+          bring a CaCam phone feed into OBS over USB or ADB.
         </p>
         <div class="button-row">
           <a class="button primary" href={release.html_url}
@@ -57,22 +57,14 @@ const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
       </div>
 
       <div class="hero-visual">
-        <picture>
-          <source
-            media="(max-width: 590px)"
-            srcset={joinURL(BASE_URL, "bgobs-logo-horizontal-600x200.png")}
-            width="600"
-            height="200"
-          />
-          <img
-            class="hero-logo"
-            src={joinURL(BASE_URL, "bgobs-logo-principal-512x512.png")}
-            width="512"
-            height="512"
-            alt="BGOBS mascot styling his hair in front of a webcam"
-            fetchpriority="high"
-          />
-        </picture>
+        <img
+          class="hero-logo"
+          src={joinURL(BASE_URL, "bgobs-logo-principal-512x512.png")}
+          width="512"
+          height="512"
+          alt="BGOBS mascot styling his hair"
+          fetchpriority="high"
+        />
         <aside class="hero-card" aria-label="Latest BGOBS release">
           <span class="badge latest">Latest release</span>
           <h2>{release.tag_name}</h2>

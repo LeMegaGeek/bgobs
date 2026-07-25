@@ -14,9 +14,9 @@
   --line: #2a354a;
   --text: #f7f9fc;
   --muted: #b8c2d4;
-  --accent: #55d72f;
-  --accent-bright: #a7f973;
-  --accent-ink: #071705;
+  --accent: #0b9abf;
+  --accent-bright: #75def3;
+  --accent-ink: #03151b;
   --cyan: #55d9ee;
   --success: #86efac;
   --warning: #ffd486;
@@ -54,7 +54,7 @@ body {
   background:
     radial-gradient(
       circle at 12% -10%,
-      rgb(85 215 47 / 20%),
+      rgb(11 154 191 / 22%),
       transparent 30rem
     ),
     radial-gradient(circle at 88% 2%, rgb(85 217 238 / 12%), transparent 28rem),
@@ -171,9 +171,9 @@ pre,
 .brand-mark {
   width: 2.6rem;
   height: 2.6rem;
-  border: 1px solid rgb(167 249 115 / 35%);
+  border: 1px solid rgb(117 222 243 / 35%);
   border-radius: 0.75rem;
-  box-shadow: 0 0 28px rgb(85 215 47 / 28%);
+  box-shadow: 0 0 28px rgb(11 154 191 / 28%);
   object-fit: cover;
 }
 
@@ -246,18 +246,14 @@ pre,
   padding: 0 0 7.5rem;
 }
 
-.hero-visual picture {
-  display: block;
-}
-
 .hero-logo {
   display: block;
   width: 100%;
-  border: 1px solid rgb(167 249 115 / 28%);
+  border: 1px solid rgb(117 222 243 / 28%);
   border-radius: 1.6rem;
   box-shadow:
     0 32px 90px rgb(0 0 0 / 50%),
-    0 0 70px rgb(85 215 47 / 12%);
+    0 0 70px rgb(11 154 191 / 14%);
 }
 
 .hero h1 {
@@ -294,7 +290,7 @@ pre,
   height: 10rem;
   content: "";
   border-radius: 50%;
-  background: rgb(85 215 47 / 18%);
+  background: rgb(11 154 191 / 18%);
   filter: blur(8px);
 }
 
@@ -364,8 +360,8 @@ pre,
 }
 
 .accent-card {
-  border-color: #387d2b;
-  background: linear-gradient(145deg, rgb(34 91 24 / 45%), rgb(8 11 18 / 45%));
+  border-color: #176b80;
+  background: linear-gradient(145deg, rgb(8 75 92 / 48%), rgb(8 11 18 / 45%));
 }
 
 .prose h1,
