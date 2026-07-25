@@ -82,6 +82,8 @@ jobs:
         run: |
           set -euo pipefail
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew tap obsproject/tools
+          brew trust obsproject/tools
           brew install obsproject/tools/clang-format@19
           echo "$(brew --prefix obsproject/tools/clang-format@19)/bin" >> "$GITHUB_PATH"
 
