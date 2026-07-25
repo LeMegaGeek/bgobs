@@ -51,7 +51,7 @@ jobs:
 
     env:
       CLEAN_BASH_ENV: '${{ github.workspace }}/.github/scripts/clean-env-ubuntu.bash'
-      FILTERED_PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
+      FILTERED_PATH: '/home/runner/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
       ORT_CCACHE_DIR: '${{ github.workspace }}/.ort_ccache'
       ROOT_VCPKG_ROOT: '${{ github.workspace }}/vcpkg'
       VCPKG_BINARY_SOURCES: '${{ inputs.VCPKG_BINARY_SOURCES }}'
