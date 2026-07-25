@@ -185,6 +185,7 @@ jobs:
           PLATFORM_TOOLS_SHA256: '${{ inputs.platform-tools-sha256 }}'
           PLATFORM_TOOLS_URL: '${{ inputs.platform-tools-url }}'
           PLATFORM_TOOLS_VERSION: '${{ inputs.platform-tools-version }}'
+          KEEP_ENV_VARS: 'PLATFORM_TOOLS_SHA256;PLATFORM_TOOLS_URL;PLATFORM_TOOLS_VERSION'
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
@@ -240,6 +241,7 @@ jobs:
         shell: pwsh
         env:
           ORT_SHA256: '${{ inputs.ort-sha256 }}'
+          KEEP_ENV_VARS: 'ORT_SHA256'
           PATH: '${{ env.FILTERED_PATH }}'
         run: |
           $ErrorActionPreference = 'Stop'
