@@ -19,7 +19,6 @@ import {
 const { BASE_URL } = import.meta.env;
 const release = await getLatestBgobsRelease();
 const windowsAsset = findAsset(release, ASSET_PATTERNS.windows);
-const macosAsset = findAsset(release, ASSET_PATTERNS.macos);
 const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
 ---
 
@@ -82,7 +81,6 @@ const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
           }
           <ul>
             <li class:list={{ available: windowsAsset }}>Windows x64</li>
-            <li class:list={{ available: macosAsset }}>macOS universal</li>
             <li class:list={{ available: ubuntuAsset }}>Ubuntu x86_64</li>
           </ul>
           <small>Green dots indicate an installer in this exact release.</small>
@@ -130,7 +128,6 @@ const ubuntuAsset = findAsset(release, ASSET_PATTERNS.ubuntu);
       </div>
       <ul class="download-links">
         <li><a href={joinURL(BASE_URL, "windows/")}>Windows</a></li>
-        <li><a href={joinURL(BASE_URL, "macos/")}>macOS</a></li>
         <li><a href={joinURL(BASE_URL, "ubuntu/")}>Ubuntu</a></li>
         <li><a href={joinURL(BASE_URL, "versions/")}>Release archive</a></li>
       </ul>

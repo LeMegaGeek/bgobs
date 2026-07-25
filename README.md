@@ -39,9 +39,9 @@ the available artifact types can include:
 - **Windows 10 or 11 x64:** extract the ZIP and copy the `bgobs` plugin folder
   into the OBS plugin directory. The ZIP also contains helpers for OBS
   PortableApps.
-- **macOS 12 or later:** run the universal `.pkg` installer for Intel and Apple
-  silicon Macs.
 - **Ubuntu 24.04 x86_64:** install the `.deb` package with APT.
+
+macOS is not supported and BGOBS does not publish a macOS package.
 
 If a platform has no attached artifact, BGOBS makes no binary-support claim for
 that platform in that version; use the source and build documentation instead.

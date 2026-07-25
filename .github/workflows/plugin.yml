@@ -147,31 +147,6 @@ jobs:
       platform-tools-url: ${{ needs.config.outputs.PLATFORM_TOOLS_URL }}
       platform-tools-sha256: ${{ needs.config.outputs.PLATFORM_TOOLS_SHA256 }}
 
-  build-macos:
-    name: macOS universal
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-    needs: config
-    permissions:
-      contents: read
-    uses: ./.github/workflows/plugin-build-macos.yml
-    with:
-      runs-on: macos-15
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app
-      VCPKG_BINARY_SOURCES: ${{ needs.config.outputs.VCPKG_BINARY_SOURCES }}
-
-  build-macos-release:
-    name: macOS universal release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: config
-    permissions:
-      contents: read
-    uses: ./.github/workflows/plugin-build-macos.yml
-    with:
-      runs-on: macos-15
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app
-      VCPKG_BINARY_SOURCES: ${{ needs.config.outputs.VCPKG_BINARY_SOURCES }}
-    secrets: inherit
-
   build-ubuntu:
     name: Linux x86_64
     needs: config
@@ -190,10 +165,8 @@ jobs:
     if: >-
       always() &&
       needs['build-windows'].result == 'success' &&
-      needs['build-ubuntu'].result == 'success' &&
-      (needs['build-macos'].result == 'success' ||
-      needs['build-macos-release'].result == 'success')
-    needs: [build-windows, build-macos, build-macos-release, build-ubuntu]
+      needs['build-ubuntu'].result == 'success'
+    needs: [build-windows, build-ubuntu]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:

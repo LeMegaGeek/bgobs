@@ -29,16 +29,8 @@ def expected_names(version: str) -> tuple[str, ...]:
     return (
         f"bgobs-{version}-linux-x86_64-debug-symbols.ddeb",
         f"bgobs-{version}-linux-x86_64-unsigned.deb",
-        f"bgobs-{version}-macos-universal-debug-symbols.tar.zst",
         f"bgobs-{version}-windows-x64-debug-symbols.zip",
         f"bgobs-{version}-windows-x64-unsigned.zip",
-    )
-
-
-def macos_package_names(version: str) -> tuple[str, str]:
-    return (
-        f"bgobs-{version}-macos-universal.pkg",
-        f"bgobs-{version}-macos-universal-unsigned.pkg",
     )
 
 
@@ -48,19 +40,16 @@ def validate_assets(directory: Path, version: str) -> list[Path]:
         raise ValueError(f"Invalid release version: {version}")
 
     expected = set(expected_names(version))
-    macos_candidates = set(macos_package_names(version))
     actual = {path.name for path in directory.iterdir() if path.is_file()}
     missing = sorted(expected - actual)
-    selected_macos = actual & macos_candidates
-    unexpected = sorted(actual - expected - macos_candidates)
-    if missing or unexpected or len(selected_macos) != 1:
+    unexpected = sorted(actual - expected)
+    if missing or unexpected:
         raise ValueError(
             "Release assets do not match. "
-            f"Missing={missing}; unexpected={unexpected}; "
-            f"macOS packages={sorted(selected_macos)} (expected exactly one signed or unsigned package)"
+            f"Missing={missing}; unexpected={unexpected}"
         )
 
-    assets = [directory / name for name in sorted(expected | selected_macos)]
+    assets = [directory / name for name in sorted(expected)]
     empty = [path.name for path in assets if path.stat().st_size == 0]
     if empty:
         raise ValueError(f"Release assets are empty: {empty}")

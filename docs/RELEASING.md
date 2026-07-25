@@ -41,7 +41,7 @@ architecture, and BGOBS commit. Verify:
 
 When CaCam compatibility changed, test only the transports included in the
 release claim. Record the CaCam version and device separately. A successful
-Android test does not validate Windows, macOS, or Linux packaging.
+Android test does not validate Windows or Linux packaging.
 
 ## 4. Tag and build
 
@@ -54,6 +54,10 @@ workflow file exists. A platform is published for that version only after its
 build, native tests, and package validation pass. Record manual smoke-test
 coverage separately and never imply that an unperformed platform smoke test
 succeeded.
+
+The supported release matrix is Windows x64 and Ubuntu x86_64 only. Do not add
+macOS to the release matrix, release notes, download pages, or expected
+artifacts; BGOBS does not publish a macOS package.
 
 ## 5. Inspect the draft release
 

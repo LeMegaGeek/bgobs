@@ -8,17 +8,14 @@
 layout: ../../layouts/MarkdownLayout.astro
 pathname: dev/macos
 lang: en
-title: Develop BGOBS on macOS
-description: Find the current BGOBS development instructions for macOS in the public repository.
+title: macOS development is unsupported
+description: BGOBS does not support macOS builds or releases.
 ---
 
 <p class="eyebrow">Developer documentation</p>
 
-# Develop BGOBS on macOS
+# macOS development is unsupported
 
-BGOBS build instructions are maintained in the repository rather than copied to
-this platform page. Use the
-[current development guide](https://github.com/LeMegaGeek/bgobs/blob/main/docs/DEVELOPMENT.md)
-and the macOS workflows in the same revision you are building.
-
-Use BGOBS bundle identifiers and output paths from the current source tree.
+BGOBS supports release builds for Windows x64 and Ubuntu x86_64 only. macOS is
+not part of the supported build, test, packaging, or release matrix, and no
+official macOS package is published.

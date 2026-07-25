@@ -9,109 +9,33 @@ import { joinURL, withTrailingSlash } from "ufo";
 
 import Layout from "../layouts/Layout.astro";
 import { PRODUCTION_BASE_URL } from "../lib/info.js";
-import {
-  ASSET_PATTERNS,
-  findAsset,
-  getLatestBgobsRelease,
-} from "../lib/releases.js";
 
 const { BASE_URL } = import.meta.env;
-const release = await getLatestBgobsRelease();
-const asset = findAsset(release, ASSET_PATTERNS.macos);
-const isUnsigned = asset
-  ? ASSET_PATTERNS.macosUnsigned.test(asset.name)
-  : false;
-const releaseDetails = withTrailingSlash(
-  joinURL(BASE_URL, "versions", release.tag_name),
-);
 ---
 
 <Layout
   lang="en"
-  title="Install BGOBS on macOS"
-  description="Check for and install an official BGOBS universal package for OBS Studio on macOS."
+  title="macOS is not supported"
+  description="BGOBS does not support macOS and does not publish a macOS package."
   canonical={joinURL(PRODUCTION_BASE_URL, "macos")}
 >
   <main id="main-content" class="content-panel prose">
     <p class="eyebrow">macOS</p>
-    <h1>Install BGOBS on macOS</h1>
+    <h1>macOS is not supported</h1>
     <p class="lede">
-      BGOBS supports macOS 12 or later. This page offers a universal installer
-      for Intel and Apple silicon only when the current GitHub release contains
-      an official BGOBS package.
+      BGOBS publishes packages for Windows x64 and Ubuntu x86_64 only. No macOS
+      package is built, tested, or released.
     </p>
 
-    {
-      asset ? (
-        <>
-          {isUnsigned ? (
-            <aside class="callout">
-              <p>
-                <strong>This package is unsigned and not notarized.</strong> Its
-                filename ends in <code>-unsigned.pkg</code>. Verify its SHA-256
-                checksum against this release before opening it. If Gatekeeper
-                blocks it, use <strong>Open Anyway</strong> in System Settings →
-                Privacy &amp; Security only after that verification.
-              </p>
-            </aside>
-          ) : (
-            <aside class="callout">
-              <p>
-                <strong>This package is signed and notarized by Apple.</strong>
-                You can still verify its SHA-256 checksum from the release
-                details before installation.
-              </p>
-            </aside>
-          )}
-          <div class="button-row">
-            <a
-              class="button primary"
-              href={asset.browser_download_url}
-              download
-            >
-              Download {asset.name}
-            </a>
-            <a class="button" href={releaseDetails}>
-              Verify this download
-            </a>
-          </div>
-
-          <ol>
-            <li>Close OBS Studio.</li>
-            <li>
-              Open <code>{asset.name}</code> and follow the macOS installer.
-            </li>
-            <li>
-              If macOS displays a security prompt, confirm that the package came
-              from this official GitHub release before making a decision.
-            </li>
-            <li>Start OBS Studio again, then follow the usage guide.</li>
-          </ol>
-        </>
-      ) : (
-        <aside class="callout">
-          <p>
-            <strong>No macOS package is attached to {release.tag_name}.</strong>{" "}
-            BGOBS does not redirect you to an unrelated installer. Follow the
-            official Releases page for a future package or use the public source
-            with the repository's current development documentation.
-          </p>
-          <p>
-            <a href={release.html_url}>Open the official GitHub release</a>
-          </p>
-        </aside>
-      )
-    }
-
-    <h2>Next step</h2>
-    <p>
-      Open <a href={joinURL(BASE_URL, "usage/")}>Use BGOBS</a> to add the effect filter
-      or an optional CaCam source.
-    </p>
+    <aside class="callout">
+      <p>
+        <strong>There is no official macOS download.</strong> Do not use a package
+        presented elsewhere as an official BGOBS release.
+      </p>
+    </aside>
 
     <nav class="page-nav" aria-label="Page navigation">
       <a href={withTrailingSlash(BASE_URL)}>BGOBS home</a>
-      <a href={release.html_url}>Official GitHub release</a>
     </nav>
   </main>
 </Layout>

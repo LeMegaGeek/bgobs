@@ -109,7 +109,7 @@ jobs:
           fi
 
           assets=("$ARTIFACTS_DIR"/*)
-          if (( ${#assets[@]} < 9 )); then
+          if (( ${#assets[@]} < 7 )); then
             echo "The aggregated release is missing expected metadata or packages." >&2
             exit 1
           fi
