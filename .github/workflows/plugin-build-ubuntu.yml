@@ -228,9 +228,6 @@ jobs:
           PATH: '${{ env.FILTERED_PATH }}'
           VCPKG_ROOT: '${{ env.ROOT_VCPKG_ROOT }}'
         run: |
-          version="$(tr -d '\r\n' < VERSION)"
-          printf 'BGOBS_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
-
           cmake \
             -S . \
             -B build_x86_64 \
@@ -267,6 +264,7 @@ jobs:
           BASH_ENV: '${{ env.CLEAN_BASH_ENV }}'
           PATH: '${{ env.FILTERED_PATH }}'
         run: |
+          version="$(tr -d '\r\n' < VERSION)"
           rm -rf build_x86_64/release package-stage-linux artifacts-linux
           (cd build_x86_64 && cpack -G DEB)
 
@@ -282,12 +280,12 @@ jobs:
           python3 scripts/validate_package.py \
             --root package-stage-linux \
             --platform linux \
-            --version "$BGOBS_VERSION" \
+            --version "$version" \
             --signing-status unsigned
 
           mkdir artifacts-linux
-          cp "${runtime_packages[0]}" "artifacts-linux/bgobs-$BGOBS_VERSION-linux-x86_64-unsigned.deb"
-          cp "${debug_packages[0]}" "artifacts-linux/bgobs-$BGOBS_VERSION-linux-x86_64-debug-symbols.ddeb"
+          cp "${runtime_packages[0]}" "artifacts-linux/bgobs-$version-linux-x86_64-unsigned.deb"
+          cp "${debug_packages[0]}" "artifacts-linux/bgobs-$version-linux-x86_64-debug-symbols.ddeb"
 
       - name: Upload Plugin Binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
