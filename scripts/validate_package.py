@@ -51,6 +51,10 @@ def validate_data(data_dir: Path, version: str, signing_status: str) -> None:
             raise ValueError(
                 f"Plugin manifest {key!r} must be {expected!r}, got {manifest.get(key)!r}"
             )
+    urls = manifest.get("urls")
+    if not isinstance(urls, dict) or urls.get("website") != "https://lemegageek.github.io/bgobs/":
+        raise ValueError(f"Plugin website must point to the BGOBS public page: {manifest_path}")
+    require_file(data_dir / "bgobs-icone-64x64.png", "BGOBS logo")
 
     config_path = require_file(data_dir / "config.json", "default configuration")
     config = load_json(config_path, "default configuration")

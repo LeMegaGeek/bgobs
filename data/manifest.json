@@ -8,7 +8,7 @@
   "os_arch": "windows-x64, macos, ubuntu-x86_64",
   "urls": {
     "repository": "https://github.com/LeMegaGeek/bgobs",
-    "website": "https://github.com/LeMegaGeek/bgobs",
+    "website": "https://lemegageek.github.io/bgobs/",
     "support": "https://github.com/LeMegaGeek/bgobs/issues"
   },
   "has_banner": true,

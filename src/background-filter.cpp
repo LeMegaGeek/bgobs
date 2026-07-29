@@ -37,6 +37,7 @@
 #include "ort-utils/ort-session-utils.hpp"
 #include "obs-utils/obs-utils.hpp"
 #include "consts.h"
+#include "plugin-info.hpp"
 #include "background/mask-post-processing.hpp"
 #include "update-checker/update-checker.h"
 
@@ -463,10 +464,8 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_properties_add_group(props, "focal_blur_group", obs_module_text("FocalBlurGroup"), OBS_GROUP_NORMAL,
 				 focal_blur_props);
 
-	// Add a informative text about the plugin
-	// replace the placeholder with the current version
-	// use std::regex_replace instead of QString::arg because the latter doesn't work on Linux
-	std::string basic_info = std::regex_replace(PLUGIN_INFO_TEMPLATE, std::regex("%1"), PLUGIN_VERSION);
+	// Add an informative text about the plugin.
+	std::string basic_info = bgobs_plugin_info_html();
 	// Check for update
 	const char *latest_version = get_latest_version();
 	if (latest_version != nullptr) {

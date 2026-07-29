@@ -463,6 +463,7 @@ set(CACAM_USB_SOURCE_SOURCES src/cacam-usb-source.cpp src/cacam-usb-source-info.
 set(
   PLUGIN_SOURCES
   src/plugin-main.c
+  src/plugin-info.cpp
   src/plugin-support.c
   src/ort-utils/ort-session-utils.cpp
   src/obs-utils/obs-utils.cpp
@@ -548,7 +549,7 @@ set(
   data/effects/mask_alpha_filter.effect
 )
 
-set(GENERAL_DATA_FILES data/config.json data/manifest.json)
+set(GENERAL_DATA_FILES data/bgobs-icone-64x64.png data/config.json data/manifest.json)
 set(LEGAL_FILES LICENSE NOTICE THIRD_PARTY_NOTICES.md)
 
 function(bgobs_install_vcpkg_copyrights DESTINATION)

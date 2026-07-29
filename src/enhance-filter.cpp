@@ -24,6 +24,7 @@
 
 #include "plugin-support.h"
 #include "consts.h"
+#include "plugin-info.hpp"
 #include "obs-utils/obs-utils.hpp"
 #include "ort-utils/ort-session-utils.hpp"
 #include "models/ModelTBEFN.hpp"
@@ -80,9 +81,8 @@ obs_properties_t *enhance_filter_properties(void *data)
 	obs_property_list_add_string(p_use_gpu, obs_module_text("CoreML"), USEGPU_COREML);
 #endif
 
-	// Add a informative text about the plugin
-	// replace the placeholder with the current version using std::regex_replace
-	std::string basic_info = std::regex_replace(PLUGIN_INFO_TEMPLATE, std::regex("%1"), PLUGIN_VERSION);
+	// Add an informative text about the plugin.
+	std::string basic_info = bgobs_plugin_info_html();
 	// Check for update
 	const char *latest_version = get_latest_version();
 	if (latest_version != nullptr) {

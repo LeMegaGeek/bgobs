@@ -31,8 +31,8 @@ const char *const EFFECT_PATH = "effects/mask_alpha_filter.effect";
 const char *const KAWASE_BLUR_EFFECT_PATH = "effects/kawase_blur.effect";
 const char *const BLEND_EFFECT_PATH = "effects/blend_images.effect";
 
-const char *const PLUGIN_INFO_TEMPLATE = "<a href=\"https://github.com/LeMegaGeek/bgobs/\">BGOBS</a> (%1) by "
-					 "<a href=\"https://github.com/LeMegaGeek\">LeMegaGeek</a>";
+const char *const PLUGIN_WEBSITE_URL = "https://lemegageek.github.io/bgobs/";
+const char *const PLUGIN_LOGO_PATH = "bgobs-icone-64x64.png";
 const char *const PLUGIN_INFO_TEMPLATE_UPDATE_AVAILABLE =
 	"<center><a href=\"https://github.com/LeMegaGeek/bgobs/releases\">Update available! (%1)</a></center>";
 

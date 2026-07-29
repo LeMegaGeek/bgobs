@@ -47,6 +47,7 @@ SPDX-License-Identifier = "CC0-1.0"
 
 [[annotations]]
 path = [
+    "data/bgobs-icone-64x64.png",
     "images/*.png",
 ]
 SPDX-FileCopyrightText = "2026 LeMegaGeek <d.github@chey.net>"
