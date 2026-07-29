@@ -3,6 +3,15 @@
 This file records user-visible BGOBS changes. Historical entries before the
 BGOBS fork remain available in Git history and their original tags.
 
+## 0.3.20 - 2026-07-29
+
+### Changed
+
+- Pointed BGOBS website links to the public project page instead of the source
+  repository.
+- Added the official BGOBS logo to the filter information shown in OBS and to
+  the packaged plugin data.
+
 ## 0.3.19 - 2026-07-21
 
 ### Added
