@@ -18,7 +18,10 @@ qt6_macos_sha256=d3f5f04b6ea486e032530bdf0187cbda9a54e0a49621a4c8ba984c502399886
 
 vcpkg_git_tag=2026.04.27
 onnxruntime_git_tag=v1.23.2
-onnxruntime_windows_x64_sha256=0b38df9af21834e41e73d602d90db5cb06dbd1ca618948b8f1d66d607ac9f3cd
+onnxruntime_windows_directml_version=1.24.4
+onnxruntime_windows_directml_sha256=57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681
+directml_windows_version=1.15.4
+directml_windows_sha256=4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9
 
 platform_tools_windows_x64_version=37.0.0
 platform_tools_windows_x64_url=https://dl.google.com/android/repository/platform-tools_r37.0.0-win.zip

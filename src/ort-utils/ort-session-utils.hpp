@@ -25,7 +25,8 @@ bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat 
  * RVM uses this path so its soft alpha is not quantized to 8-bit before the
  * OBS compositor. Other models continue to use the legacy 8-bit wrapper.
  */
-bool runFilterModelInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output);
+bool runFilterModelInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output,
+				  cv::Mat *reconstructedForegroundBGRA = nullptr);
 
 /** Reset recurrent state held by a temporal model, if any. */
 void resetFilterModelState(filter_data *tf);

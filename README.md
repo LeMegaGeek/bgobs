@@ -17,6 +17,7 @@ endorsed by the OBS Project. AI-assisted work is disclosed in
 
 - Remove or blur a camera background without a green screen.
 - Use high-resolution Robust Video Matting with soft alpha edges for hair and hands.
+- Try experimental calibrated-background matting when the camera can capture an empty scene.
 - Choose Natural, Studio, Crisp, or Performance mask presets.
 - Preview the mask and tune threshold, edge softness, cleanup, refinement,
   expansion, feathering, and temporal smoothing.

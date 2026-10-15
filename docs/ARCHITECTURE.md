@@ -24,6 +24,9 @@ For an ordinary OBS source, OBS supplies a frame to the background or
 enhancement filter. The C++ layer prepares model input, invokes ONNX Runtime,
 normalizes model output, and applies the selected effect. Background-mask
 post-processing is described in [MASK-POST-PROCESSING.md](MASK-POST-PROCESSING.md).
+Background matting modes, synchronized frame/alpha transport, the calibrated
+studio mode, and its release-validation gate are documented in
+[BACKGROUND-MATTING.md](BACKGROUND-MATTING.md).
 
 The optional direct USB source follows a separate path:
 

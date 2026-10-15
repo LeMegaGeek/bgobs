@@ -8,6 +8,9 @@ uniform float4x4 ViewProj;
 uniform texture2d image;     // input RGBA
 uniform texture2d alphamask; // alpha mask
 uniform texture2d blurredBackground; // input RGBA
+uniform texture2d matchedSource; // source frame paired with this mask
+uniform texture2d reconstructedForeground; // model-decontaminated RGB
+uniform float useReconstructedForeground;
 
 sampler_state textureSampler {
 	Filter    = Linear;
@@ -37,10 +40,16 @@ float4 PSAlphaMaskRGBAWithBlur(VertDataOut v_in) : TARGET
 {
 	float4 inputRGBA = image.Sample(textureSampler, v_in.uv);
 	inputRGBA.rgb = max(float3(0.0, 0.0, 0.0), inputRGBA.rgb / max(inputRGBA.a, 0.0001));
+	float4 matchedRGBA = matchedSource.Sample(textureSampler, v_in.uv);
+	matchedRGBA.rgb = max(float3(0.0, 0.0, 0.0), matchedRGBA.rgb / max(matchedRGBA.a, 0.0001));
+	float3 foregroundRGB = lerp(inputRGBA.rgb,
+				    reconstructedForeground.Sample(textureSampler, v_in.uv).rgb,
+				    saturate(useReconstructedForeground));
 
 	float4 outputRGBA;
-	float a = (1.0 - alphamask.Sample(textureSampler, v_in.uv).r) * inputRGBA.a;
-	outputRGBA.rgb = inputRGBA.rgb * a + blurredBackground.Sample(textureSampler, v_in.uv).rgb * (1.0 - a);
+	float sourceAlpha = lerp(inputRGBA.a, matchedRGBA.a, saturate(useReconstructedForeground));
+	float a = (1.0 - alphamask.Sample(textureSampler, v_in.uv).r) * sourceAlpha;
+	outputRGBA.rgb = foregroundRGB * a + blurredBackground.Sample(textureSampler, v_in.uv).rgb * (1.0 - a);
 	outputRGBA.a = 1;
 	return outputRGBA;
 }
@@ -55,10 +64,16 @@ float4 PSAlphaMaskRGBAWithoutBlur(VertDataOut v_in) : TARGET
 {
 	float4 inputRGBA = image.Sample(textureSampler, v_in.uv);
 	inputRGBA.rgb = max(float3(0.0, 0.0, 0.0), inputRGBA.rgb / max(inputRGBA.a, 0.0001));
+	float4 matchedRGBA = matchedSource.Sample(textureSampler, v_in.uv);
+	matchedRGBA.rgb = max(float3(0.0, 0.0, 0.0), matchedRGBA.rgb / max(matchedRGBA.a, 0.0001));
+	float3 foregroundRGB = lerp(inputRGBA.rgb,
+				    reconstructedForeground.Sample(textureSampler, v_in.uv).rgb,
+				    saturate(useReconstructedForeground));
 
 	float4 outputRGBA;
-	float a = (1.0 - alphamask.Sample(textureSampler, v_in.uv).r) * inputRGBA.a;
-	outputRGBA.rgb = inputRGBA.rgb * a;
+	float sourceAlpha = lerp(inputRGBA.a, matchedRGBA.a, saturate(useReconstructedForeground));
+	float a = (1.0 - alphamask.Sample(textureSampler, v_in.uv).r) * sourceAlpha;
+	outputRGBA.rgb = foregroundRGB * a;
 	outputRGBA.a = a;
 	return outputRGBA;
 }

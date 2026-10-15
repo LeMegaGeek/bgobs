@@ -94,7 +94,7 @@ def validate_data(data_dir: Path, version: str, signing_status: str) -> None:
     require_file(data_dir / "locale" / "en-US.ini", "English locale")
 
     model_dir = data_dir / "models"
-    models = sorted(model_dir.glob("*.ort"))
+    models = sorted((*model_dir.glob("*.ort"), *model_dir.glob("*.onnx")))
     if not models:
         raise ValueError(f"No ONNX Runtime model found in {model_dir}")
     for model in models:
@@ -110,12 +110,19 @@ def validate(root: Path, platform: str, version: str, signing_status: str) -> No
         binary_dir = plugin_root / "bin" / "64bit"
         require_file(binary_dir / "bgobs.dll", "Windows plugin binary")
         require_file(binary_dir / "onnxruntime.dll", "ONNX Runtime DLL")
+        require_file(binary_dir / "DirectML.dll", "DirectML redistributable runtime")
         require_file(binary_dir / "libusb-1.0.dll", "libusb DLL")
         adb_dir = binary_dir / "adb"
         for filename in ("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"):
             require_file(adb_dir / filename, "Android platform-tools runtime")
         require_file(adb_dir / "NOTICE.txt", "Android platform-tools notices")
         require_file(root / "THIRD-PARTY-NOTICES" / "libusb.txt", "libusb license")
+        for notice in (
+            "DirectML-LICENSE.txt",
+            "DirectML-LICENSE-CODE.txt",
+            "DirectML-ThirdPartyNotices.txt",
+        ):
+            require_file(root / "THIRD-PARTY-NOTICES" / notice, "DirectML redistribution notice")
         require_file(plugin_root / "data" / "onnxruntime-copyright", "ONNX Runtime license")
         require_file(
             plugin_root / "data" / "onnxruntime-third-party-notices.txt",

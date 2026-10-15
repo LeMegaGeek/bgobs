@@ -65,6 +65,15 @@ int main(int argc, char **argv)
 		if (alpha.rows != 192 || alpha.cols != 320 || alpha.type() != CV_32FC1) {
 			return EXIT_FAILURE;
 		}
+		cv::Mat foreground = model.getForegroundOutput(outputDims, outputValues);
+		if (foreground.rows != 192 || foreground.cols != 320 || foreground.type() != CV_32FC3) {
+			std::cerr << "unexpected RVM reconstructed foreground shape\n";
+			return EXIT_FAILURE;
+		}
+		if (!cv::checkRange(foreground, true, nullptr, 0.0, 1.0)) {
+			std::cerr << "RVM reconstructed foreground contains out-of-range values\n";
+			return EXIT_FAILURE;
+		}
 		for (int row = 0; row < alpha.rows; ++row) {
 			for (int col = 0; col < alpha.cols; ++col) {
 				const float value = alpha.at<float>(row, col);
@@ -78,7 +87,7 @@ int main(int argc, char **argv)
 		// the sequence used by the worker when a camera changes resolution.
 		model.assignOutputToInput(outputValues, inputValues);
 		for (size_t i = 1; i < 5; ++i)
-			inputDims[i] = outputDims[i];
+			inputDims[i] = outputDims[i + 1];
 		model.configureForFrame(inputDims, outputDims, 320, 192, 0.5f);
 		model.prepareTensorBuffers(inputDims, outputDims, outputValues, inputValues, inputTensors,
 					   outputTensors);

@@ -14,6 +14,7 @@ const char *const MODEL_MEDIAPIPE = "models/mediapipe.with_runtime_opt.ort";
 const char *const MODEL_SELFIE = "models/selfie_segmentation.with_runtime_opt.ort";
 const char *const MODEL_SELFIE_MULTICLASS = "models/selfie_multiclass_256x256.with_runtime_opt.ort";
 const char *const MODEL_RVM = "models/rvm_mobilenetv3_fp32.with_runtime_opt.ort";
+const char *const MODEL_BGMV2 = "models/bgmv2_mobilenetv2_hd.onnx";
 const char *const MODEL_PPHUMANSEG = "models/pphumanseg_fp32.with_runtime_opt.ort";
 const char *const MODEL_ENHANCE_TBEFN = "models/tbefn_fp32.with_runtime_opt.ort";
 const char *const MODEL_ENHANCE_URETINEX = "models/uretinex_net_180x320.with_runtime_opt.ort";

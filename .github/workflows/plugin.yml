@@ -32,6 +32,7 @@ jobs:
       VCPKG_BINARY_SOURCES: ${{ steps.config.outputs.VCPKG_BINARY_SOURCES }}
       VCPKG_VERSION: ${{ steps.config.outputs.VCPKG_VERSION }}
       ORT_VERSION: ${{ steps.config.outputs.ORT_VERSION }}
+      ORT_WINDOWS_VERSION: ${{ steps.config.outputs.ORT_WINDOWS_VERSION }}
       ORT_WINDOWS_SHA256: ${{ steps.config.outputs.ORT_WINDOWS_SHA256 }}
       OBS_LINUX_SHA256: ${{ steps.config.outputs.OBS_LINUX_SHA256 }}
       OBS_VERSION: ${{ steps.config.outputs.OBS_VERSION }}
@@ -55,7 +56,10 @@ jobs:
           manifest_version="$(python3 -c 'import json; print(json.load(open("data/manifest.json", encoding="utf-8"))["version"])')"
           vcpkg_version="$(awk -F= '$1 == "vcpkg_git_tag" { print $2 }' buildspec.props)"
           ort_version="$(awk -F= '$1 == "onnxruntime_git_tag" { print $2 }' buildspec.props)"
-          ort_windows_sha256="$(awk -F= '$1 == "onnxruntime_windows_x64_sha256" { print $2 }' buildspec.props)"
+          ort_windows_version="$(awk -F= '$1 == "onnxruntime_windows_directml_version" { print $2 }' buildspec.props)"
+          ort_windows_sha256="$(awk -F= '$1 == "onnxruntime_windows_directml_sha256" { print $2 }' buildspec.props)"
+          directml_windows_version="$(awk -F= '$1 == "directml_windows_version" { print $2 }' buildspec.props)"
+          directml_windows_sha256="$(awk -F= '$1 == "directml_windows_sha256" { print $2 }' buildspec.props)"
           platform_tools_version="$(awk -F= '$1 == "platform_tools_windows_x64_version" { print $2 }' buildspec.props)"
           platform_tools_url="$(awk -F= '$1 == "platform_tools_windows_x64_url" { print $2 }' buildspec.props)"
           platform_tools_sha256="$(awk -F= '$1 == "platform_tools_windows_x64_sha256" { print $2 }' buildspec.props)"
@@ -75,8 +79,20 @@ jobs:
             echo "Pinned dependency versions are missing from buildspec.props." >&2
             exit 1
           fi
+          if [[ ! "$ort_windows_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid pinned ONNX Runtime DirectML NuGet version." >&2
+            exit 1
+          fi
           if [[ ! "$ort_windows_sha256" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Invalid pinned ONNX Runtime Windows SHA-256." >&2
+            echo "Invalid pinned ONNX Runtime DirectML NuGet SHA-256." >&2
+            exit 1
+          fi
+          if [[ ! "$directml_windows_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid pinned DirectML redistributable NuGet version." >&2
+            exit 1
+          fi
+          if [[ ! "$directml_windows_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid pinned DirectML redistributable NuGet SHA-256." >&2
             exit 1
           fi
           if [[ ! "$platform_tools_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -123,7 +139,10 @@ jobs:
             echo "VCPKG_BINARY_SOURCES=$vcpkg_binary_sources"
             echo "VCPKG_VERSION=$vcpkg_version"
             echo "ORT_VERSION=$ort_version"
+            echo "ORT_WINDOWS_VERSION=$ort_windows_version"
             echo "ORT_WINDOWS_SHA256=$ort_windows_sha256"
+            echo "DIRECTML_WINDOWS_VERSION=$directml_windows_version"
+            echo "DIRECTML_WINDOWS_SHA256=$directml_windows_sha256"
             echo "OBS_LINUX_SHA256=$obs_linux_sha256"
             echo "OBS_VERSION=$obs_version"
             echo "PLATFORM_TOOLS_SHA256=$platform_tools_sha256"
@@ -141,8 +160,10 @@ jobs:
     with:
       VCPKG_BINARY_SOURCES: ${{ needs.config.outputs.VCPKG_BINARY_SOURCES }}
       vcpkg-version: ${{ needs.config.outputs.VCPKG_VERSION }}
-      ort-version: ${{ needs.config.outputs.ORT_VERSION }}
+      ort-version: ${{ needs.config.outputs.ORT_WINDOWS_VERSION }}
       ort-sha256: ${{ needs.config.outputs.ORT_WINDOWS_SHA256 }}
+      directml-version: ${{ needs.config.outputs.DIRECTML_WINDOWS_VERSION }}
+      directml-sha256: ${{ needs.config.outputs.DIRECTML_WINDOWS_SHA256 }}
       platform-tools-version: ${{ needs.config.outputs.PLATFORM_TOOLS_VERSION }}
       platform-tools-url: ${{ needs.config.outputs.PLATFORM_TOOLS_URL }}
       platform-tools-sha256: ${{ needs.config.outputs.PLATFORM_TOOLS_SHA256 }}

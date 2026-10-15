@@ -9,7 +9,10 @@
 #include <obs-module.h>
 
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 
 #include "models/Model.hpp"
 #include "ort-utils/ORTModelData.hpp"
@@ -34,6 +37,18 @@ struct filter_data : public ORTModelData, public std::enable_shared_from_this<fi
 	gs_stagesurf_t *stagesurface = nullptr;
 
 	cv::Mat inputBGRA;
+	uint64_t inputFrameSequence = 0;
+	std::chrono::steady_clock::time_point inputFrameCapturedAt{};
+	cv::Mat studioBackgroundBGRA;
+	cv::Mat studioSourceRGB;
+	cv::Mat studioBackgroundRGB;
+	cv::Mat studioSourceResizedRGB;
+	cv::Mat studioBackgroundResizedRGB;
+	cv::Mat studioSourceFloat;
+	cv::Mat studioBackgroundFloat;
+	cv::Mat studioSourceCHW;
+	cv::Mat studioBackgroundCHW;
+	std::mutex studioBackgroundMutex;
 
 	std::atomic<bool> isDisabled{false};
 

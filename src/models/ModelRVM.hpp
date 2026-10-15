@@ -18,6 +18,7 @@ private:
 	bool recurrentStateInitialized = false;
 	int configuredWidth = 0;
 	int configuredHeight = 0;
+	float configuredRatio = 0.0f;
 
 	static int downsampleDimension(int value, float ratio)
 	{
@@ -38,6 +39,7 @@ public:
 		recurrentStateInitialized = false;
 		configuredWidth = 0;
 		configuredHeight = 0;
+		configuredRatio = 0.0f;
 	}
 
 	bool hasRecurrentState() const { return recurrentStateInitialized; }
@@ -61,30 +63,34 @@ public:
 		const int smallWidth = downsampleDimension(sourceWidth, downsampleRatio);
 		const int smallHeight = downsampleDimension(sourceHeight, downsampleRatio);
 
-		const bool sourceChanged = configuredWidth != sourceWidth || configuredHeight != sourceHeight;
-		if (sourceChanged) {
+		const bool tensorLayoutChanged = configuredWidth != sourceWidth || configuredHeight != sourceHeight ||
+					 std::abs(configuredRatio - downsampleRatio) > 0.000001f;
+		if (tensorLayoutChanged) {
 			recurrentStateInitialized = false;
 		}
 		configuredWidth = sourceWidth;
 		configuredHeight = sourceHeight;
+		configuredRatio = downsampleRatio;
 
 		inputDims.resize(6);
-		outputDims.resize(5);
+		outputDims.resize(6);
 		inputDims[0] = {1, 3, sourceHeight, sourceWidth};
 		inputDims[5] = {1};
 		for (size_t i = 1; i < 5; ++i) {
-			if (recurrentStateInitialized && i < outputDims.size() && outputDims[i].size() == 4) {
-				inputDims[i] = outputDims[i];
+			const size_t stateOutput = i + 1;
+			if (recurrentStateInitialized && stateOutput < outputDims.size() && outputDims[stateOutput].size() == 4) {
+				inputDims[i] = outputDims[stateOutput];
 			} else {
 				inputDims[i] = {1, 1, 1, 1};
 			}
 		}
 
-		outputDims[0] = {1, 1, sourceHeight, sourceWidth};
+		outputDims[0] = {1, 3, sourceHeight, sourceWidth};
+		outputDims[1] = {1, 1, sourceHeight, sourceWidth};
 		constexpr int stateChannels[] = {16, 20, 40, 64};
 		for (size_t i = 1; i < 5; ++i) {
 			const int divisor = 2 << (static_cast<int>(i) - 1);
-			outputDims[i] = {1,
+			outputDims[i + 1] = {1,
 					static_cast<int64_t>(stateChannels[i - 1]),
 					featureDimension(smallHeight, divisor),
 					featureDimension(smallWidth, divisor)};
@@ -148,7 +154,7 @@ public:
 		for (size_t i = 0; i < session->GetInputCount(); i++) {
 			inputNames.push_back(session->GetInputNameAllocated(i, allocator));
 		}
-		for (size_t i = 1; i < session->GetOutputCount(); i++) {
+		for (size_t i = 0; i < session->GetOutputCount(); i++) {
 			outputNames.push_back(session->GetOutputNameAllocated(i, allocator));
 		}
 	}
@@ -157,7 +163,8 @@ public:
 					       std::vector<std::vector<int64_t>> &inputDims,
 					       std::vector<std::vector<int64_t>> &outputDims)
 	{
-		// Assuming model only has one input and one output image
+		// RVM exposes six inputs and outputs: source, four recurrent states,
+		// ratio; then reconstructed foreground, alpha, and four recurrent states.
 
 		inputDims.clear();
 		outputDims.clear();
@@ -169,7 +176,7 @@ public:
 			inputDims.push_back(inputTensorInfo.GetShape());
 		}
 
-		for (size_t i = 1; i < session->GetOutputCount(); i++) {
+		for (size_t i = 0; i < session->GetOutputCount(); i++) {
 			// Get output shape
 			const Ort::TypeInfo outputTypeInfo = session->GetOutputTypeInfo(i);
 			const auto outputTensorInfo = outputTypeInfo.GetTensorTypeAndShapeInfo();
@@ -186,15 +193,50 @@ public:
 		// dimensions immediately before the first inference.
 		inputDims = {{1, 3, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1},
 			     {1, 1, 1, 1}, {1, 1, 1, 1}, {1}};
-		outputDims = {{1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1},
-			      {1, 1, 1, 1}, {1, 1, 1, 1}};
+		outputDims = {{1, 3, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1},
+			      {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}};
 		return true;
+	}
+
+	virtual cv::Mat getNetworkOutput(const std::vector<std::vector<int64_t>> &outputDims,
+					 std::vector<std::vector<float>> &outputTensorValues)
+	{
+		// The shared inference entry point consumes alpha. RVM's reconstructed
+		// foreground is available separately through getForegroundOutput().
+		if (outputDims.size() < 2 || outputTensorValues.size() < 2) {
+			return {};
+		}
+		return cv::Mat(static_cast<int>(outputDims[1][2]), static_cast<int>(outputDims[1][3]), CV_32FC1,
+				outputTensorValues[1].data());
+	}
+
+	cv::Mat getForegroundOutput(const std::vector<std::vector<int64_t>> &outputDims,
+				     std::vector<std::vector<float>> &outputTensorValues)
+	{
+		if (outputDims.empty() || outputTensorValues.empty()) {
+			return {};
+		}
+		const int height = static_cast<int>(outputDims[0][2]);
+		const int width = static_cast<int>(outputDims[0][3]);
+		const size_t plane = static_cast<size_t>(height) * width;
+		const float *planes = outputTensorValues[0].data();
+		cv::Mat foreground(height, width, CV_32FC3);
+		for (int y = 0; y < height; ++y) {
+			cv::Vec3f *row = foreground.ptr<cv::Vec3f>(y);
+			for (int x = 0; x < width; ++x) {
+				const size_t index = static_cast<size_t>(y) * width + x;
+				row[x] = cv::Vec3f(planes[index], planes[plane + index], planes[2 * plane + index]);
+			}
+		}
+		cv::min(foreground, 1.0f, foreground);
+		cv::max(foreground, 0.0f, foreground);
+		return foreground;
 	}
 
 	virtual void loadInputToTensor(const cv::Mat &preprocessedImage, uint32_t, uint32_t,
 				       std::vector<std::vector<float>> &inputTensorValues)
 	{
-		inputTensorValues[0].assign(preprocessedImage.begin<float>(), preprocessedImage.end<float>());
+		std::copy(preprocessedImage.begin<float>(), preprocessedImage.end<float>(), inputTensorValues[0].begin());
 		inputTensorValues[5][0] = downsampleRatio;
 	}
 
@@ -202,7 +244,7 @@ public:
 					 std::vector<std::vector<float>> &inputTensorValues)
 	{
 		for (size_t i = 1; i < 5; i++) {
-			inputTensorValues[i].assign(outputTensorValues[i].begin(), outputTensorValues[i].end());
+			inputTensorValues[i].assign(outputTensorValues[i + 1].begin(), outputTensorValues[i + 1].end());
 		}
 		recurrentStateInitialized = true;
 	}

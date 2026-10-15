@@ -347,9 +347,8 @@ block(
     add_library(onnxruntime::onnxruntime ALIAS onnxruntime)
   endif()
 
-  # DirectML is optional. CPU remains the portable fallback, while Windows
-  # packages built with an ONNX Runtime DML provider can accelerate AMD,
-  # Intel, and NVIDIA GPUs without changing the model interface.
+  # DirectML can be built into the ONNX Runtime NuGet package or delivered as
+  # a separate provider library. CPU remains the portable runtime fallback.
   set(BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR "")
   set(BGOBS_ONNXRUNTIME_DML_LIBRARY "")
   if(WIN32)
@@ -538,10 +537,12 @@ target_link_libraries(
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE BGOBS_VERSION_STRING="${PLUGIN_VERSION}")
 
-if(BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR AND BGOBS_ONNXRUNTIME_DML_LIBRARY)
+if(BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_ONNXRUNTIME_DML_EP)
   target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR}")
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${BGOBS_ONNXRUNTIME_DML_LIBRARY}")
+  if(BGOBS_ONNXRUNTIME_DML_LIBRARY)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${BGOBS_ONNXRUNTIME_DML_LIBRARY}")
+  endif()
 endif()
 
 include(CTest)
@@ -591,6 +592,24 @@ if(BUILD_TESTING)
     NAME rvm-inference
     COMMAND rvm-inference-test
       "${CMAKE_CURRENT_SOURCE_DIR}/data/models/rvm_mobilenetv3_fp32.with_runtime_opt.ort"
+  )
+
+  add_executable(
+    bgmv2-inference-test
+    tests/models/bgmv2-inference-test.cpp
+    src/plugin-support.c
+    tests/models/test-support.c
+  )
+  target_include_directories(bgmv2-inference-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  target_include_directories(
+    bgmv2-inference-test PRIVATE "$<TARGET_PROPERTY:OBS::libobs,INTERFACE_INCLUDE_DIRECTORIES>"
+  )
+  target_compile_definitions(bgmv2-inference-test PRIVATE BGOBS_VERSION_STRING="test")
+  target_link_libraries(bgmv2-inference-test PRIVATE onnxruntime::onnxruntime OpenCV::opencv_core)
+  bgobs_copy_test_runtime(bgmv2-inference-test)
+  add_test(
+    NAME bgmv2-inference
+    COMMAND bgmv2-inference-test "${CMAKE_CURRENT_SOURCE_DIR}/data/models/bgmv2_mobilenetv2_hd.onnx"
   )
 endif()
 
@@ -684,6 +703,8 @@ set(
 
 set(
   MODELS_FILES
+  data/models/bgmv2_mobilenetv2_hd.onnx
+  data/models/bgmv2_mobilenetv2_hd.onnx.license
   data/models/mediapipe.with_runtime_opt.ort
   data/models/mediapipe.with_runtime_opt.ort.license
   data/models/pphumanseg_fp32.with_runtime_opt.ort

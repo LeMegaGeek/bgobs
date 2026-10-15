@@ -12,6 +12,7 @@
 #endif // _WIN32
 
 #include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include <cstring>
 #include <cmath>
@@ -28,6 +29,9 @@
 #include <regex>
 #include <thread>
 #include <utility>
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
 
 #include "plugin-support.h"
 #include "models/ModelSINET.hpp"
@@ -35,6 +39,7 @@
 #include "models/ModelSelfie.hpp"
 #include "models/ModelSelfieMulticlass.hpp"
 #include "models/ModelRVM.hpp"
+#include "models/ModelBackgroundMattingV2.hpp"
 #include "models/ModelPPHumanSeg.hpp"
 #include "models/ModelTCMonoDepth.hpp"
 #include "FilterData.hpp"
@@ -44,6 +49,8 @@
 #include "plugin-info.hpp"
 #include "background/mask-post-processing.hpp"
 #include "update-checker/update-checker.h"
+
+enum class StudioCaptureState { Unavailable, Countdown, Recording, Saving, Ready, Failed, Stale };
 
 struct bgobs_background_filter : public filter_data, public std::enable_shared_from_this<bgobs_background_filter> {
 	std::string beautyPreset;
@@ -79,8 +86,13 @@ struct bgobs_background_filter : public filter_data, public std::enable_shared_f
 	gs_effect_t *effect = nullptr;
 	gs_effect_t *kawaseBlurEffect = nullptr;
 	gs_texture_t *alphaTexture = nullptr;
+	gs_texture_t *sourceFrameTexture = nullptr;
+	gs_texture_t *foregroundFrameTexture = nullptr;
 	uint32_t alphaTextureWidth = 0;
 	uint32_t alphaTextureHeight = 0;
+	uint32_t frameTextureWidth = 0;
+	uint32_t frameTextureHeight = 0;
+	uint64_t uploadedMattingFrameId = 0;
 	gs_color_format alphaTextureFormat = GS_UNKNOWN;
 	std::vector<uint16_t> alphaUploadBuffer;
 	gs_texture_t *blurTexture = nullptr;
@@ -97,17 +109,33 @@ struct bgobs_background_filter : public filter_data, public std::enable_shared_f
 	bool stopInferenceWorker = false;
 	cv::Mat pendingInferenceFrame;
 	uint64_t pendingInferenceGeneration = 0;
+	uint64_t pendingInferenceFrameSequence = 0;
+	std::chrono::steady_clock::time_point pendingInferenceCapturedAt{};
 	std::atomic<uint64_t> inferenceGeneration{1};
 
 	// RVM's soft alpha stays float until the render thread uploads it. The
 	// existing 8-bit mask remains the path for segmentation models.
 	cv::Mat backgroundAlpha;
+	cv::Mat backgroundSourceBGRA;
+	cv::Mat backgroundForegroundBGRA;
 	uint64_t backgroundAlphaGeneration = 0;
+	uint64_t backgroundAlphaFrameSequence = 0;
+	std::chrono::steady_clock::time_point backgroundAlphaCapturedAt{};
 	std::atomic<bool> nativeAlpha{false};
 	std::atomic<float> rvmDownsampleRatio{0.25f};
 	std::atomic<uint64_t> submittedFrames{0};
 	std::atomic<uint64_t> completedFrames{0};
 	std::atomic<float> lastInferenceMs{0.0f};
+	std::atomic<float> lastFrameLatencyMs{0.0f};
+	std::atomic<uint64_t> droppedInferenceFrames{0};
+	std::string studioBackgroundPath;
+	std::mutex studioCaptureMutex;
+	StudioCaptureState studioCaptureState = StudioCaptureState::Unavailable;
+	float studioCaptureCountdownSeconds = 0.0f;
+	float studioCaptureElapsedSeconds = 0.0f;
+	uint32_t studioCaptureFrameCount = 0;
+	cv::Mat studioCaptureAccumulator;
+	std::thread studioBackgroundSaveThread;
 
 	~bgobs_background_filter() { obs_log(LOG_INFO, "BGOBS background filter destructor called"); }
 };
@@ -125,6 +153,7 @@ const char *const BGOBS_MATTING_AUTO = "auto";
 const char *const BGOBS_MATTING_QUALITY = "quality";
 const char *const BGOBS_MATTING_PERFORMANCE = "performance";
 const char *const BGOBS_MATTING_LEGACY = "legacy";
+const char *const BGOBS_MATTING_STUDIO = "studio_calibrated";
 constexpr int BGOBS_SETTINGS_VERSION = 2;
 
 struct BackgroundBeautyPreset {
@@ -385,7 +414,8 @@ uint16_t floatToHalf(float value)
 static void invalidateInference(struct bgobs_background_filter *tf);
 static void startInferenceWorker(const std::shared_ptr<bgobs_background_filter> &tf);
 static void stopInferenceWorker(const std::shared_ptr<bgobs_background_filter> &tf);
-static void submitInferenceFrame(const std::shared_ptr<bgobs_background_filter> &tf, cv::Mat frame);
+static void submitInferenceFrame(const std::shared_ptr<bgobs_background_filter> &tf, cv::Mat frame,
+				 uint64_t frameSequence, std::chrono::steady_clock::time_point capturedAt);
 
 const char *background_filter_getname(void *unused)
 {
@@ -463,6 +493,164 @@ static bool enable_advanced_settings(obs_properties_t *ppts, obs_property_t *p, 
 	return true;
 }
 
+static std::string studioBackgroundPathForSource(obs_source_t *source)
+{
+	char *configDirectory = obs_module_config_path(nullptr);
+	if (!configDirectory) {
+		return {};
+	}
+	const char *uuid = source ? obs_source_get_uuid(source) : nullptr;
+	const std::string fileKey = uuid && uuid[0] != '\0' ? uuid : "bgobs-filter";
+	const std::filesystem::path result = std::filesystem::path(configDirectory) / "studio-backgrounds" /
+					     (fileKey + ".png");
+	bfree(configDirectory);
+	return result.string();
+}
+
+static void loadStudioBackground(bgobs_background_filter *tf)
+{
+	if (!tf || tf->studioBackgroundPath.empty() || !std::filesystem::exists(tf->studioBackgroundPath)) {
+		return;
+	}
+	cv::Mat loaded = cv::imread(tf->studioBackgroundPath, cv::IMREAD_UNCHANGED);
+	if (loaded.empty()) {
+		obs_log(LOG_WARNING, "Unable to load calibrated background image");
+		return;
+	}
+	if (loaded.channels() == 3) {
+		cv::cvtColor(loaded, loaded, cv::COLOR_BGR2BGRA);
+	} else if (loaded.channels() == 1) {
+		cv::cvtColor(loaded, loaded, cv::COLOR_GRAY2BGRA);
+	} else if (loaded.channels() != 4) {
+		obs_log(LOG_WARNING, "Calibrated background image has an unsupported channel count");
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(tf->studioBackgroundMutex);
+		tf->studioBackgroundBGRA = std::move(loaded);
+	}
+	std::lock_guard<std::mutex> captureLock(tf->studioCaptureMutex);
+	tf->studioCaptureState = StudioCaptureState::Ready;
+}
+
+static const char *studioCaptureStateText(StudioCaptureState state)
+{
+	switch (state) {
+	case StudioCaptureState::Countdown:
+		return "StudioCaptureCountdown";
+	case StudioCaptureState::Recording:
+		return "StudioCaptureRecording";
+	case StudioCaptureState::Saving:
+		return "StudioCaptureSaving";
+	case StudioCaptureState::Ready:
+		return "StudioCaptureReady";
+	case StudioCaptureState::Failed:
+		return "StudioCaptureFailed";
+	case StudioCaptureState::Stale:
+		return "StudioCaptureStale";
+	case StudioCaptureState::Unavailable:
+	default:
+		return "StudioCaptureFallbackAuto";
+	}
+}
+
+static std::string mattingLatencyStatus(void *data)
+{
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
+	std::string status;
+	if (!ptr || !*ptr || (*ptr)->completedFrames.load(std::memory_order_relaxed) == 0 ||
+	    (*ptr)->lastFrameLatencyMs.load(std::memory_order_relaxed) <= 0.0f) {
+		status = obs_module_text("MattingLatencyWaiting");
+	} else {
+		const float latencyMs = (*ptr)->lastFrameLatencyMs.load(std::memory_order_relaxed);
+		const uint64_t dropped = (*ptr)->droppedInferenceFrames.load(std::memory_order_relaxed);
+		std::ostringstream formatted;
+		formatted << std::fixed << std::setprecision(1) << latencyMs;
+		status = std::regex_replace(obs_module_text("MattingLatencyMeasured"), std::regex("%1"),
+					    formatted.str());
+		if (latencyMs > 100.0f) {
+			status += "\n";
+			status += obs_module_text("MattingLatencyOverTarget");
+		}
+		if (dropped > 0) {
+			status += "\n";
+			status += std::regex_replace(obs_module_text("MattingDroppedFrames"), std::regex("%1"),
+						     std::to_string(dropped));
+		}
+	}
+	if (ptr && *ptr) {
+		bool studioMode = false;
+		{
+			std::lock_guard<std::mutex> lock((*ptr)->modelMutex);
+			studioMode = (*ptr)->mattingMode == BGOBS_MATTING_STUDIO;
+		}
+		if (studioMode) {
+			StudioCaptureState captureState;
+			{
+				std::lock_guard<std::mutex> lock((*ptr)->studioCaptureMutex);
+				captureState = (*ptr)->studioCaptureState;
+			}
+			status += "\n";
+			status += obs_module_text("MattingStudioExperimental");
+			status += "\n";
+			status += obs_module_text(studioCaptureStateText(captureState));
+		}
+	}
+	return status;
+}
+
+static bool startStudioBackgroundCapture(obs_properties_t *properties, obs_property_t *property, void *data)
+{
+	UNUSED_PARAMETER(properties);
+	UNUSED_PARAMETER(property);
+	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
+	if (!ptr || !*ptr) {
+		return false;
+	}
+	{
+		std::lock_guard<std::mutex> lock((*ptr)->modelMutex);
+		if ((*ptr)->mattingMode != BGOBS_MATTING_STUDIO) {
+			return false;
+		}
+	}
+	std::lock_guard<std::mutex> lock((*ptr)->studioCaptureMutex);
+	if ((*ptr)->studioCaptureState == StudioCaptureState::Countdown ||
+	    (*ptr)->studioCaptureState == StudioCaptureState::Recording ||
+	    (*ptr)->studioCaptureState == StudioCaptureState::Saving || (*ptr)->studioBackgroundPath.empty()) {
+		return false;
+	}
+	if ((*ptr)->studioBackgroundSaveThread.joinable()) {
+		(*ptr)->studioBackgroundSaveThread.join();
+	}
+	(*ptr)->studioCaptureState = StudioCaptureState::Countdown;
+	(*ptr)->studioCaptureCountdownSeconds = 3.0f;
+	(*ptr)->studioCaptureElapsedSeconds = 0.0f;
+	(*ptr)->studioCaptureFrameCount = 0;
+	(*ptr)->studioCaptureAccumulator.release();
+	return true;
+}
+
+static bool mattingModeModified(obs_properties_t *properties, obs_property_t *property, obs_data_t *settings)
+{
+	UNUSED_PARAMETER(property);
+	const char *mode = obs_data_get_string(settings, "matting_mode");
+	const bool studioMode = mode && std::strcmp(mode, BGOBS_MATTING_STUDIO) == 0;
+	setPropertyVisible(properties, "studio_capture_instructions", studioMode);
+	setPropertyVisible(properties, "studio_capture_background", studioMode);
+	return true;
+}
+
+static bool refreshMattingLatencyStatus(obs_properties_t *properties, obs_property_t *property, void *data)
+{
+	UNUSED_PARAMETER(property);
+	obs_property_t *status = obs_properties_get(properties, "matting_latency_status");
+	if (status) {
+		const std::string description = mattingLatencyStatus(data);
+		obs_property_set_description(status, description.c_str());
+	}
+	return true;
+}
+
 obs_properties_t *background_filter_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
@@ -492,8 +680,28 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingPerformance"),
 				     BGOBS_MATTING_PERFORMANCE);
 	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingLegacy"), BGOBS_MATTING_LEGACY);
+	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingStudioCalibrated"), BGOBS_MATTING_STUDIO);
+	obs_property_set_modified_callback(p_matting_mode, mattingModeModified);
+	obs_properties_add_text(props, "studio_capture_instructions", obs_module_text("StudioCaptureInstructions"),
+				 OBS_TEXT_INFO);
+	obs_properties_add_button2(props, "studio_capture_background", obs_module_text("StudioCaptureButton"),
+				   startStudioBackgroundCapture, data);
+	bool studioMode = false;
+	if (data) {
+		auto *filter = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
+		if (filter && *filter) {
+			std::lock_guard<std::mutex> lock((*filter)->modelMutex);
+			studioMode = (*filter)->mattingMode == BGOBS_MATTING_STUDIO;
+		}
+	}
+	setPropertyVisible(props, "studio_capture_instructions", studioMode);
+	setPropertyVisible(props, "studio_capture_background", studioMode);
 
 	obs_properties_add_bool(props, "show_mask_preview", obs_module_text("ShowMaskPreview"));
+	const std::string latencyStatus = mattingLatencyStatus(data);
+	obs_properties_add_text(props, "matting_latency_status", latencyStatus.c_str(), OBS_TEXT_INFO);
+	obs_properties_add_button2(props, "refresh_matting_latency_status", obs_module_text("MattingLatencyRefresh"),
+				   refreshMattingLatencyStatus, data);
 
 	/* Threshold props */
 	obs_property_t *p_enable_threshold =
@@ -686,7 +894,8 @@ void background_filter_update(void *data, obs_data_t *settings)
 		std::lock_guard<std::mutex> lock(tf->modelMutex);
 		tf->mattingMode = mattingMode;
 	}
-	if (mattingMode != BGOBS_MATTING_LEGACY && mattingMode != BGOBS_MATTING_PERFORMANCE) {
+	if (mattingMode != BGOBS_MATTING_LEGACY && mattingMode != BGOBS_MATTING_PERFORMANCE &&
+	    mattingMode != BGOBS_MATTING_STUDIO) {
 		// The high-resolution RVM path is the default for all new and migrated
 		// background-removal filters.
 		obs_data_set_string(settings, "model_select", MODEL_RVM);
@@ -738,13 +947,17 @@ void background_filter_update(void *data, obs_data_t *settings)
 	std::string newModel = effectiveModelSelection(settings, mattingMode);
 	if (mattingMode == BGOBS_MATTING_PERFORMANCE) {
 		newModel = MODEL_MEDIAPIPE;
+	} else if (mattingMode == BGOBS_MATTING_STUDIO) {
+		std::lock_guard<std::mutex> lock(tf->studioBackgroundMutex);
+		newModel = tf->studioBackgroundBGRA.empty() ? MODEL_RVM : MODEL_BGMV2;
 	}
 	uint32_t newNumThreads = (uint32_t)obs_data_get_int(settings, "numThreads");
 	if (newNumThreads == 0) {
 		const unsigned int hardwareThreads = std::max(2u, std::thread::hardware_concurrency());
 		newNumThreads = std::clamp(hardwareThreads / 2u, 2u, 4u);
 	}
-	tf->nativeAlpha = (newModel == MODEL_RVM && mattingMode != BGOBS_MATTING_LEGACY);
+	tf->nativeAlpha = (newModel == MODEL_RVM || newModel == MODEL_BGMV2) &&
+			  mattingMode != BGOBS_MATTING_LEGACY;
 	tf->rvmDownsampleRatio = 0.25f;
 	invalidateInference(tf.get());
 
@@ -776,6 +989,8 @@ void background_filter_update(void *data, obs_data_t *settings)
 				tf->model.reset(new ModelMediaPipe);
 			if (tf->modelSelection == MODEL_RVM)
 				tf->model.reset(new ModelRVM);
+			if (tf->modelSelection == MODEL_BGMV2)
+				tf->model.reset(new ModelBackgroundMattingV2);
 			if (tf->modelSelection == MODEL_PPHUMANSEG)
 				tf->model.reset(new ModelPPHumanSeg);
 			if (tf->modelSelection == MODEL_DEPTH_TCMONODEPTH)
@@ -907,6 +1122,8 @@ void *background_filter_create(obs_data_t *settings, obs_source_t *source)
 
 		instance->source = source;
 		instance->texrender = gs_texrender_create(GS_BGRA, GS_ZS_NONE);
+		instance->studioBackgroundPath = studioBackgroundPathForSource(source);
+		loadStudioBackground(instance.get());
 
 		std::string instanceName{"bgobs-background-inference"};
 		instance->env.reset(new Ort::Env(OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR, instanceName.c_str()));
@@ -939,6 +1156,16 @@ void background_filter_destroy(void *data)
 			(*ptr)->isDisabled = true;
 			invalidateInference(ptr->get());
 			stopInferenceWorker(*ptr);
+			std::thread studioSaveThread;
+			{
+				std::lock_guard<std::mutex> lock((*ptr)->studioCaptureMutex);
+				if ((*ptr)->studioBackgroundSaveThread.joinable()) {
+					studioSaveThread = std::move((*ptr)->studioBackgroundSaveThread);
+				}
+			}
+			if (studioSaveThread.joinable()) {
+				studioSaveThread.join();
+			}
 
 			// Perform cleanup
 			obs_enter_graphics();
@@ -949,6 +1176,8 @@ void background_filter_destroy(void *data)
 			gs_effect_destroy((*ptr)->effect);
 			gs_effect_destroy((*ptr)->kawaseBlurEffect);
 			gs_texture_destroy((*ptr)->alphaTexture);
+			gs_texture_destroy((*ptr)->sourceFrameTexture);
+			gs_texture_destroy((*ptr)->foregroundFrameTexture);
 			gs_texture_destroy((*ptr)->blurTexture);
 			obs_leave_graphics();
 		}
@@ -986,11 +1215,17 @@ static void invalidateInference(struct bgobs_background_filter *tf)
 		std::lock_guard<std::mutex> lock(tf->inferenceQueueMutex);
 		tf->pendingInferenceFrame.release();
 		tf->pendingInferenceGeneration = tf->inferenceGeneration.load(std::memory_order_acquire);
+		tf->pendingInferenceFrameSequence = 0;
+		tf->pendingInferenceCapturedAt = {};
 	}
 	{
 		std::lock_guard<std::mutex> lock(tf->outputLock);
 		tf->backgroundMask.release();
 		tf->backgroundAlpha.release();
+		tf->backgroundSourceBGRA.release();
+		tf->backgroundForegroundBGRA.release();
+		tf->backgroundAlphaFrameSequence = 0;
+		tf->backgroundAlphaCapturedAt = {};
 		tf->lastBackgroundMask.release();
 	}
 	{
@@ -1001,11 +1236,86 @@ static void invalidateInference(struct bgobs_background_filter *tf)
 	tf->inferenceQueueCondition.notify_one();
 }
 
+static bool selectInferenceModelLocked(bgobs_background_filter *tf, const std::string &modelSelection)
+{
+	if (tf->modelSelection == modelSelection && tf->model) {
+		return true;
+	}
+	tf->session.reset();
+	tf->inputTensor.clear();
+	tf->outputTensor.clear();
+	tf->inputTensorValues.clear();
+	tf->outputTensorValues.clear();
+	tf->inputDims.clear();
+	tf->outputDims.clear();
+	tf->modelSelection = modelSelection;
+	if (modelSelection == MODEL_BGMV2) {
+		tf->model.reset(new ModelBackgroundMattingV2);
+	} else if (modelSelection == MODEL_RVM) {
+		tf->model.reset(new ModelRVM);
+	} else {
+		return false;
+	}
+	if (createOrtSession(tf) == OBS_BGREMOVAL_ORT_SESSION_SUCCESS) {
+		return true;
+	}
+	if (modelSelection == MODEL_BGMV2 && tf->useGPU != USEGPU_CPU) {
+		obs_log(LOG_WARNING, "Studio model could not start on GPU; retrying on CPU");
+		tf->session.reset();
+		tf->useGPU = USEGPU_CPU;
+		if (createOrtSession(tf) == OBS_BGREMOVAL_ORT_SESSION_SUCCESS) {
+			return true;
+		}
+	}
+	if (modelSelection == MODEL_BGMV2) {
+		obs_log(LOG_ERROR, "Studio model failed to start; returning to automatic RVM");
+		{
+			std::lock_guard<std::mutex> lock(tf->studioCaptureMutex);
+			tf->studioCaptureState = StudioCaptureState::Failed;
+		}
+		tf->session.reset();
+		tf->inputTensor.clear();
+		tf->outputTensor.clear();
+		tf->model.reset(new ModelRVM);
+		tf->modelSelection = MODEL_RVM;
+		return createOrtSession(tf) == OBS_BGREMOVAL_ORT_SESSION_SUCCESS;
+	}
+	return false;
+}
+
+static bool ensureStudioModelForFrameLocked(bgobs_background_filter *tf, const cv::Mat &frame)
+{
+	if (tf->mattingMode != BGOBS_MATTING_STUDIO) {
+		return true;
+	}
+	cv::Mat background;
+	{
+		std::lock_guard<std::mutex> lock(tf->studioBackgroundMutex);
+		background = tf->studioBackgroundBGRA;
+	}
+	std::string selectedModel = MODEL_RVM;
+	if (!background.empty() && background.size() == frame.size()) {
+		selectedModel = MODEL_BGMV2;
+	} else if (!background.empty()) {
+		std::lock_guard<std::mutex> lock(tf->studioCaptureMutex);
+		tf->studioCaptureState = StudioCaptureState::Stale;
+	}
+	if (!selectInferenceModelLocked(tf, selectedModel)) {
+		obs_log(LOG_ERROR, "Unable to select a background matting model");
+		tf->isDisabled = true;
+		return false;
+	}
+	tf->nativeAlpha = true;
+	return true;
+}
+
 static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 {
 	for (;;) {
 		cv::Mat frame;
 		uint64_t generation = 0;
+		uint64_t frameSequence = 0;
+		std::chrono::steady_clock::time_point capturedAt{};
 		{
 			std::unique_lock<std::mutex> lock(tf->inferenceQueueMutex);
 			tf->inferenceQueueCondition.wait(lock, [&] {
@@ -1016,6 +1326,8 @@ static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 			}
 			frame = std::move(tf->pendingInferenceFrame);
 			generation = tf->pendingInferenceGeneration;
+			frameSequence = tf->pendingInferenceFrameSequence;
+			capturedAt = tf->pendingInferenceCapturedAt;
 		}
 
 		if (frame.empty() || tf->isDisabled || generation != tf->inferenceGeneration.load()) {
@@ -1038,17 +1350,21 @@ static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 				tf->lastImageBGRA = frame.clone();
 			}
 			cv::Mat output;
+			cv::Mat reconstructedForegroundBGRA;
 			bool inferenceSucceeded = false;
 			{
 				std::unique_lock<std::mutex> lock(tf->modelMutex);
-				if (!tf->model || generation != tf->inferenceGeneration.load()) {
+				if (generation != tf->inferenceGeneration.load() ||
+				    !ensureStudioModelForFrameLocked(tf.get(), frame) || !tf->model) {
 					continue;
 				}
 				if (nativeAlpha) {
 					tf->rvmDownsampleRatio = chooseRvmDownsampleRatio(tf->mattingMode, frame.cols, frame.rows);
-					inferenceSucceeded = runFilterModelInferenceFloat(tf.get(), frame, output);
+					inferenceSucceeded = runFilterModelInferenceFloat(tf.get(), frame, output,
+									       &reconstructedForegroundBGRA);
 				} else {
 					inferenceSucceeded = runFilterModelInference(tf.get(), frame, output);
+					reconstructedForegroundBGRA = frame;
 				}
 			}
 
@@ -1058,14 +1374,18 @@ static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 
 			if (nativeAlpha) {
 				if (output.type() != CV_32FC1) {
-					obs_log(LOG_WARNING, "RVM returned a non-floating alpha; frame discarded");
+					obs_log(LOG_WARNING, "Matting model returned a non-floating alpha; frame discarded");
 					continue;
 				}
 				std::lock_guard<std::mutex> lock(tf->outputLock);
 				if (generation == tf->inferenceGeneration.load()) {
 					tf->backgroundAlpha = std::move(output);
 					tf->backgroundMask.release();
+					tf->backgroundSourceBGRA = std::move(frame);
+					tf->backgroundForegroundBGRA = std::move(reconstructedForegroundBGRA);
 					tf->backgroundAlphaGeneration = generation;
+					tf->backgroundAlphaFrameSequence = frameSequence;
+					tf->backgroundAlphaCapturedAt = capturedAt;
 				}
 			} else {
 				cv::Mat backgroundMask;
@@ -1091,7 +1411,12 @@ static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 						continue;
 					}
 					tf->lastBackgroundMask = backgroundMask.clone();
-					backgroundMask.copyTo(tf->backgroundMask);
+					tf->backgroundMask = backgroundMask;
+					tf->backgroundSourceBGRA = std::move(frame);
+					tf->backgroundForegroundBGRA = std::move(reconstructedForegroundBGRA);
+					tf->backgroundAlphaGeneration = generation;
+					tf->backgroundAlphaFrameSequence = frameSequence;
+					tf->backgroundAlphaCapturedAt = capturedAt;
 				}
 			}
 
@@ -1143,23 +1468,106 @@ static void stopInferenceWorker(const std::shared_ptr<bgobs_background_filter> &
 	}
 }
 
-static void submitInferenceFrame(const std::shared_ptr<bgobs_background_filter> &tf, cv::Mat frame)
+static void submitInferenceFrame(const std::shared_ptr<bgobs_background_filter> &tf, cv::Mat frame,
+				 uint64_t frameSequence, std::chrono::steady_clock::time_point capturedAt)
 {
 	if (frame.empty() || tf->isDisabled) {
 		return;
 	}
 	{
 		std::lock_guard<std::mutex> lock(tf->inferenceQueueMutex);
+		if (!tf->pendingInferenceFrame.empty()) {
+			tf->droppedInferenceFrames.fetch_add(1, std::memory_order_relaxed);
+		}
 		tf->pendingInferenceFrame = std::move(frame);
 		tf->pendingInferenceGeneration = tf->inferenceGeneration.load(std::memory_order_acquire);
+		tf->pendingInferenceFrameSequence = frameSequence;
+		tf->pendingInferenceCapturedAt = capturedAt;
 		tf->submittedFrames.fetch_add(1, std::memory_order_relaxed);
 	}
 	tf->inferenceQueueCondition.notify_one();
 }
 
+static bool processStudioCaptureFrame(const std::shared_ptr<bgobs_background_filter> &tf, const cv::Mat &frame,
+				      float seconds)
+{
+	if (frame.empty() || seconds <= 0.0f) {
+		return false;
+	}
+	{
+		std::lock_guard<std::mutex> lock(tf->modelMutex);
+		if (tf->mattingMode != BGOBS_MATTING_STUDIO) {
+			return false;
+		}
+	}
+
+	cv::Mat capturedBackground;
+	{
+		std::lock_guard<std::mutex> lock(tf->studioCaptureMutex);
+		if (tf->studioCaptureState == StudioCaptureState::Countdown) {
+			tf->studioCaptureCountdownSeconds -= seconds;
+			if (tf->studioCaptureCountdownSeconds <= 0.0f) {
+				tf->studioCaptureState = StudioCaptureState::Recording;
+				tf->studioCaptureElapsedSeconds = 0.0f;
+				tf->studioCaptureFrameCount = 0;
+				tf->studioCaptureAccumulator.release();
+			}
+			return false;
+		}
+		if (tf->studioCaptureState != StudioCaptureState::Recording) {
+			return false;
+		}
+		if (tf->studioCaptureAccumulator.empty() || tf->studioCaptureAccumulator.size() != frame.size()) {
+			tf->studioCaptureAccumulator = cv::Mat::zeros(frame.size(), CV_32FC4);
+			tf->studioCaptureElapsedSeconds = 0.0f;
+			tf->studioCaptureFrameCount = 0;
+		}
+		cv::Mat frameFloat;
+		frame.convertTo(frameFloat, CV_32FC4);
+		cv::accumulate(frameFloat, tf->studioCaptureAccumulator);
+		++tf->studioCaptureFrameCount;
+		tf->studioCaptureElapsedSeconds += seconds;
+		if (tf->studioCaptureElapsedSeconds < 1.0f || tf->studioCaptureFrameCount == 0) {
+			return false;
+		}
+		tf->studioCaptureAccumulator.convertTo(capturedBackground, CV_8UC4,
+							  1.0 / tf->studioCaptureFrameCount);
+		tf->studioCaptureAccumulator.release();
+		tf->studioCaptureState = StudioCaptureState::Saving;
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(tf->studioBackgroundMutex);
+		tf->studioBackgroundBGRA = capturedBackground;
+	}
+	const std::string path = tf->studioBackgroundPath;
+	{
+		std::lock_guard<std::mutex> lock(tf->studioCaptureMutex);
+		tf->studioBackgroundSaveThread = std::thread([tf, path, capturedBackground = std::move(capturedBackground)] {
+			bool saved = false;
+			try {
+				std::error_code error;
+				std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
+				if (!error) {
+					saved = cv::imwrite(path, capturedBackground);
+				}
+			} catch (const std::exception &error) {
+				obs_log(LOG_WARNING, "Unable to save calibrated background: %s", error.what());
+			}
+			if (!saved) {
+				obs_log(LOG_WARNING, "Calibrated background could not be saved; returning to automatic matting");
+				std::lock_guard<std::mutex> backgroundLock(tf->studioBackgroundMutex);
+				tf->studioBackgroundBGRA.release();
+			}
+			std::lock_guard<std::mutex> captureLock(tf->studioCaptureMutex);
+			tf->studioCaptureState = saved ? StudioCaptureState::Ready : StudioCaptureState::Failed;
+		});
+	}
+	return true;
+}
+
 void background_filter_video_tick(void *data, float seconds)
 {
-	UNUSED_PARAMETER(seconds);
 	auto *ptr = static_cast<std::shared_ptr<bgobs_background_filter> *>(data);
 	if (!ptr || !*ptr) {
 		return;
@@ -1169,12 +1577,20 @@ void background_filter_video_tick(void *data, float seconds)
 		return;
 	}
 	cv::Mat imageBGRA;
+	uint64_t frameSequence = 0;
+	std::chrono::steady_clock::time_point capturedAt{};
 	{
 		std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
 		if (!lock.owns_lock() || tf->inputBGRA.empty()) {
 			return;
 		}
-		imageBGRA = tf->inputBGRA.clone();
+		imageBGRA = tf->inputBGRA;
+		frameSequence = tf->inputFrameSequence;
+		capturedAt = tf->inputFrameCapturedAt;
+	}
+	const bool backgroundWasCaptured = processStudioCaptureFrame(tf, imageBGRA, seconds);
+	if (backgroundWasCaptured) {
+		invalidateInference(tf.get());
 	}
 	if (tf->nativeAlpha.load()) {
 		tf->maskEveryXFramesCount.store(0, std::memory_order_relaxed);
@@ -1185,11 +1601,11 @@ void background_filter_video_tick(void *data, float seconds)
 			return;
 		}
 	}
-	submitInferenceFrame(tf, std::move(imageBGRA));
+	submitInferenceFrame(tf, std::move(imageBGRA), frameSequence, capturedAt);
 }
 
 static gs_texture_t *blur_background(std::shared_ptr<bgobs_background_filter> tf, uint32_t width, uint32_t height,
-				     gs_texture_t *alphaTexture)
+				     gs_texture_t *alphaTexture, gs_texture_t *sourceTexture)
 {
 	if (tf->blurBackground == 0 || !tf->kawaseBlurEffect) {
 		return nullptr;
@@ -1202,7 +1618,7 @@ static gs_texture_t *blur_background(std::shared_ptr<bgobs_background_filter> tf
 	}
 	if (!tf->blurTexture)
 		return nullptr;
-	gs_copy_texture(tf->blurTexture, gs_texrender_get_texture(tf->texrender));
+	gs_copy_texture(tf->blurTexture, sourceTexture);
 	gs_eparam_t *image = gs_effect_get_param_by_name(tf->kawaseBlurEffect, "image");
 	gs_eparam_t *focalmask = gs_effect_get_param_by_name(tf->kawaseBlurEffect, "focalmask");
 	gs_eparam_t *xOffset = gs_effect_get_param_by_name(tf->kawaseBlurEffect, "xOffset");
@@ -1285,13 +1701,28 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 
 	{
 		std::lock_guard<std::mutex> lock(tf->outputLock);
-		const bool useNativeAlpha = tf->nativeAlpha.load() && !tf->backgroundAlpha.empty();
-		if (!useNativeAlpha && tf->backgroundMask.empty()) {
-			obs_log(LOG_WARNING, "Background mask is empty during render, skipping frame.");
+		const bool useNativeAlpha = tf->nativeAlpha.load() && !tf->backgroundAlpha.empty() &&
+					    tf->backgroundAlphaGeneration == tf->inferenceGeneration.load();
+		const cv::Mat &mask = useNativeAlpha ? tf->backgroundAlpha : tf->backgroundMask;
+		const bool packetDimensionsMatch = !mask.empty() && !tf->backgroundSourceBGRA.empty() &&
+					   !tf->backgroundForegroundBGRA.empty() && mask.cols == static_cast<int>(width) &&
+					   mask.rows == static_cast<int>(height) &&
+					   tf->backgroundSourceBGRA.cols == static_cast<int>(width) &&
+					   tf->backgroundSourceBGRA.rows == static_cast<int>(height) &&
+					   tf->backgroundForegroundBGRA.cols == static_cast<int>(width) &&
+					   tf->backgroundForegroundBGRA.rows == static_cast<int>(height);
+		if (!packetDimensionsMatch) {
+			// Never composite a mask over a different camera frame or resolution.
 			if (tf->source) {
 				obs_source_skip_video_filter(tf->source);
 			}
 			return;
+		}
+		const uint64_t frameSequence = tf->backgroundAlphaFrameSequence;
+		if (tf->backgroundAlphaCapturedAt != std::chrono::steady_clock::time_point{}) {
+			tf->lastFrameLatencyMs = std::chrono::duration<float, std::milli>(
+						  std::chrono::steady_clock::now() - tf->backgroundAlphaCapturedAt)
+					  .count();
 		}
 
 		const uint32_t maskWidth = width;
@@ -1314,6 +1745,7 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 			}
 			tf->alphaTextureWidth = maskWidth;
 			tf->alphaTextureHeight = maskHeight;
+			tf->uploadedMattingFrameId = 0;
 		}
 
 		if (!tf->alphaTexture) {
@@ -1323,43 +1755,61 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 			}
 			return;
 		}
+		if (!tf->sourceFrameTexture || !tf->foregroundFrameTexture || tf->frameTextureWidth != width ||
+		    tf->frameTextureHeight != height) {
+			gs_texture_destroy(tf->sourceFrameTexture);
+			gs_texture_destroy(tf->foregroundFrameTexture);
+			tf->sourceFrameTexture = gs_texture_create(width, height, GS_BGRA, 1, nullptr, GS_DYNAMIC);
+			tf->foregroundFrameTexture = gs_texture_create(width, height, GS_BGRA, 1, nullptr, GS_DYNAMIC);
+			tf->frameTextureWidth = width;
+			tf->frameTextureHeight = height;
+			tf->uploadedMattingFrameId = 0;
+		}
+		if (!tf->sourceFrameTexture || !tf->foregroundFrameTexture) {
+			obs_log(LOG_ERROR, "Failed to create matched frame textures");
+			if (tf->source) {
+				obs_source_skip_video_filter(tf->source);
+			}
+			return;
+		}
 
-		if (useNativeAlpha) {
-			cv::Mat alpha = tf->backgroundAlpha;
-			if (alpha.cols != static_cast<int>(maskWidth) || alpha.rows != static_cast<int>(maskHeight)) {
-				cv::resize(alpha, alpha, cv::Size(maskWidth, maskHeight), 0.0, 0.0, cv::INTER_LINEAR);
-			}
-			cv::min(alpha, 1.0f, alpha);
-			cv::max(alpha, 0.0f, alpha);
-			// The effect consumes a background mask (1 = background), whereas
-			// RVM returns foreground alpha (1 = subject).
-			alpha = 1.0f - alpha;
-			if (tf->alphaTextureFormat == GS_R16F) {
-				tf->alphaUploadBuffer.resize(static_cast<size_t>(maskWidth) * maskHeight);
-				for (size_t i = 0; i < tf->alphaUploadBuffer.size(); ++i) {
-					tf->alphaUploadBuffer[i] = floatToHalf(alpha.ptr<float>()[i]);
+		if (tf->uploadedMattingFrameId != frameSequence) {
+			gs_texture_set_image(tf->sourceFrameTexture, tf->backgroundSourceBGRA.data,
+					     static_cast<uint32_t>(tf->backgroundSourceBGRA.step[0]), false);
+			gs_texture_set_image(tf->foregroundFrameTexture, tf->backgroundForegroundBGRA.data,
+					     static_cast<uint32_t>(tf->backgroundForegroundBGRA.step[0]), false);
+			if (useNativeAlpha) {
+				cv::Mat alpha = tf->backgroundAlpha.clone();
+				cv::min(alpha, 1.0f, alpha);
+				cv::max(alpha, 0.0f, alpha);
+				// OBS consumes a background mask (1 = background); RVM returns
+				// foreground alpha (1 = subject). Keep it soft until texture upload.
+				alpha = 1.0f - alpha;
+				if (tf->alphaTextureFormat == GS_R16F) {
+					tf->alphaUploadBuffer.resize(static_cast<size_t>(maskWidth) * maskHeight);
+					for (size_t i = 0; i < tf->alphaUploadBuffer.size(); ++i) {
+						tf->alphaUploadBuffer[i] = floatToHalf(alpha.ptr<float>()[i]);
+					}
+					gs_texture_set_image(tf->alphaTexture,
+							     reinterpret_cast<const uint8_t *>(tf->alphaUploadBuffer.data()),
+							     maskWidth * sizeof(uint16_t), false);
+				} else {
+					cv::Mat alpha8;
+					alpha.convertTo(alpha8, CV_8UC1, 255.0);
+					gs_texture_set_image(tf->alphaTexture, alpha8.data,
+							     static_cast<uint32_t>(alpha8.step[0]), false);
 				}
-				gs_texture_set_image(tf->alphaTexture,
-						     reinterpret_cast<const uint8_t *>(tf->alphaUploadBuffer.data()),
-						     maskWidth * sizeof(uint16_t), false);
 			} else {
-				cv::Mat alpha8;
-				alpha.convertTo(alpha8, CV_8UC1, 255.0);
-				gs_texture_set_image(tf->alphaTexture, alpha8.data,
-						     static_cast<uint32_t>(alpha8.step[0]), false);
+				gs_texture_set_image(tf->alphaTexture, mask.data, static_cast<uint32_t>(mask.step[0]), false);
 			}
-		} else {
-			cv::Mat mask = tf->backgroundMask;
-			if (mask.cols != static_cast<int>(maskWidth) || mask.rows != static_cast<int>(maskHeight)) {
-				cv::resize(mask, mask, cv::Size(maskWidth, maskHeight), 0.0, 0.0, cv::INTER_LINEAR);
-			}
-			gs_texture_set_image(tf->alphaTexture, mask.data, static_cast<uint32_t>(mask.step[0]), false);
+		tf->uploadedMattingFrameId = frameSequence;
 		}
 	}
 
 	// Output the masked image. Mask preview is a diagnostic path and should not spend time rendering blur passes.
 	gs_texture_t *blurredTexture = tf->showMaskPreview ? nullptr
-							   : blur_background(tf, width, height, tf->alphaTexture);
+										: blur_background(tf, width, height, tf->alphaTexture,
+											  tf->sourceFrameTexture);
 
 	const enum gs_color_space sourceColorSpace = obs_source_get_color_space(tf->source, 0, nullptr);
 	if (!obs_source_process_filter_begin_with_color_space(tf->source, GS_RGBA, sourceColorSpace,
@@ -1372,8 +1822,15 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 
 	gs_eparam_t *alphamask = gs_effect_get_param_by_name(tf->effect, "alphamask");
 	gs_eparam_t *blurredBackground = gs_effect_get_param_by_name(tf->effect, "blurredBackground");
+	gs_eparam_t *matchedSource = gs_effect_get_param_by_name(tf->effect, "matchedSource");
+	gs_eparam_t *reconstructedForeground = gs_effect_get_param_by_name(tf->effect, "reconstructedForeground");
+	gs_eparam_t *useReconstructedForeground =
+		gs_effect_get_param_by_name(tf->effect, "useReconstructedForeground");
 
 	gs_effect_set_texture(alphamask, tf->alphaTexture);
+	gs_effect_set_texture(matchedSource, tf->sourceFrameTexture);
+	gs_effect_set_texture(reconstructedForeground, tf->foregroundFrameTexture);
+	gs_effect_set_float(useReconstructedForeground, 1.0f);
 
 	if (tf->blurBackground > 0) {
 		gs_effect_set_texture(blurredBackground, blurredTexture);

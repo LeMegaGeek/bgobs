@@ -56,6 +56,7 @@ The final layout should include:
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\libusb-1.0.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\onnxruntime_providers_shared.dll
+<OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\DirectML.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\adb\adb.exe
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\adb\AdbWinApi.dll
 <OBS-StudioPortable>\App\obs-studio\obs-plugins\64bit\adb\AdbWinUsbApi.dll

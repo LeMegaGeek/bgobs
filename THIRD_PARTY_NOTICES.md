@@ -13,6 +13,7 @@ file. The current inventory is:
 
 | Model asset                                 | SPDX license |
 | ------------------------------------------- | ------------ |
+| Background Matting V2 MobileNetV2 HD        | MIT          |
 | SINet Softmax                               | MIT          |
 | MediaPipe segmentation                      | Apache-2.0   |
 | PPHumanSeg                                  | Apache-2.0   |
@@ -35,6 +36,9 @@ packages components including:
 
 - OBS Studio and its development interfaces;
 - ONNX Runtime;
+- the Microsoft DirectML redistributable on Windows. The Windows package
+  includes Microsoft's redistribution terms and third-party notices under
+  `THIRD-PARTY-NOTICES/`;
 - OpenCV;
 - libcurl and a TLS backend;
 - libusb for the optional direct USB source;
