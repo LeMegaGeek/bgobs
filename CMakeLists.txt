@@ -546,6 +546,17 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  function(bgobs_copy_test_runtime target)
+    if(WIN32)
+      add_custom_command(
+        TARGET ${target}
+        POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy -t "$<TARGET_FILE_DIR:${target}>" "$<TARGET_RUNTIME_DLLS:${target}>"
+        COMMAND_EXPAND_LISTS
+      )
+    endif()
+  endfunction()
+
   set(
     MASK_POST_PROCESSING_TEST_SOURCES
     tests/background/mask-post-processing-test.cpp
@@ -566,12 +577,14 @@ if(BUILD_TESTING)
   target_include_directories(rvm-shape-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_compile_definitions(rvm-shape-test PRIVATE BGOBS_VERSION_STRING="test")
   target_link_libraries(rvm-shape-test PRIVATE OBS::libobs onnxruntime::onnxruntime OpenCV::opencv_core)
+  bgobs_copy_test_runtime(rvm-shape-test)
   add_test(NAME rvm-shape COMMAND rvm-shape-test)
 
   add_executable(rvm-inference-test tests/models/rvm-inference-test.cpp src/plugin-support.c)
   target_include_directories(rvm-inference-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_compile_definitions(rvm-inference-test PRIVATE BGOBS_VERSION_STRING="test")
   target_link_libraries(rvm-inference-test PRIVATE OBS::libobs onnxruntime::onnxruntime OpenCV::opencv_core)
+  bgobs_copy_test_runtime(rvm-inference-test)
   add_test(
     NAME rvm-inference
     COMMAND rvm-inference-test
