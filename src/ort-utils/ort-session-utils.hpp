@@ -20,4 +20,14 @@ int createOrtSession(filter_data *tf);
 
 bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output);
 
+/**
+ * Run inference while preserving the model's native floating-point output.
+ * RVM uses this path so its soft alpha is not quantized to 8-bit before the
+ * OBS compositor. Other models continue to use the legacy 8-bit wrapper.
+ */
+bool runFilterModelInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output);
+
+/** Reset recurrent state held by a temporal model, if any. */
+void resetFilterModelState(filter_data *tf);
+
 #endif /* ORT_SESSION_UTILS_H */

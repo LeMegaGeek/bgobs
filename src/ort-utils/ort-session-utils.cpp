@@ -7,6 +7,10 @@
 #include <cpu_provider_factory.h>
 #include <filesystem>
 
+#ifdef HAVE_ONNXRUNTIME_DML_EP
+#include <dml_provider_factory.h>
+#endif
+
 #if defined(__APPLE__)
 #include <coreml_provider_factory.h>
 #endif
@@ -20,7 +24,138 @@
 
 #include "ort-session-utils.hpp"
 #include "../consts.h"
+#include "../models/ModelRVM.hpp"
 #include "../plugin-support.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace {
+
+bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
+{
+	auto *rvm = dynamic_cast<ModelRVM *>(tf->model.get());
+	if (!rvm || imageBGRA.empty() || imageBGRA.type() != CV_8UC4) {
+		return false;
+	}
+
+	const int sourceWidth = imageBGRA.cols;
+	const int sourceHeight = imageBGRA.rows;
+	rvm->configureForFrame(tf->inputDims, tf->outputDims, sourceWidth, sourceHeight,
+			       tf->rvmDownsampleRatio.load());
+	rvm->prepareTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues,
+				  tf->inputTensorValues, tf->inputTensor, tf->outputTensor);
+
+	// RVM expects RGB BCHW data in [0, 1] at the original source resolution.
+	// Do not resize the source here: the model's downsample_ratio is applied
+	// internally before its high-resolution guided refinement stage.
+	cv::Mat imageRGB;
+	cv::cvtColor(imageBGRA, imageRGB, cv::COLOR_BGRA2RGB);
+	cv::Mat imageFloat;
+	imageRGB.convertTo(imageFloat, CV_32F);
+	cv::Mat preprocessedImage;
+	rvm->prepareInputToNetwork(imageFloat, preprocessedImage);
+	rvm->loadInputToTensor(preprocessedImage, static_cast<uint32_t>(sourceWidth),
+			       static_cast<uint32_t>(sourceHeight), tf->inputTensorValues);
+
+	rvm->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
+				 tf->outputTensor);
+
+	cv::Mat outputImage = rvm->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
+	rvm->postprocessOutput(outputImage);
+	if (outputImage.empty() || outputImage.type() != CV_32FC1 || outputImage.cols != sourceWidth ||
+	    outputImage.rows != sourceHeight) {
+		obs_log(LOG_ERROR, "RVM returned an invalid alpha shape: %dx%d type %d (expected %dx%d CV_32FC1)",
+			outputImage.cols, outputImage.rows, outputImage.type(), sourceWidth, sourceHeight);
+		return false;
+	}
+	output = outputImage.clone();
+
+	// Cycle the recurrent states. The first frame uses zero [1,1,1,1] inputs;
+	// subsequent frames use the output state tensors at their native shapes.
+	rvm->assignOutputToInput(tf->outputTensorValues, tf->inputTensorValues);
+	for (size_t i = 1; i < 5 && i < tf->inputDims.size() && i < tf->outputDims.size(); ++i) {
+		tf->inputDims[i] = tf->outputDims[i];
+	}
+	return true;
+}
+
+bool runGenericInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
+{
+	if (tf->session.get() == nullptr || tf->model.get() == nullptr) {
+		return false;
+	}
+
+	// To RGB
+	cv::Mat imageRGB;
+	cv::cvtColor(imageBGRA, imageRGB, cv::COLOR_BGRA2RGB);
+
+	// Letterbox segmentation/depth models instead of stretching a 16:9 camera
+	// into a square network input. The inverse transform below restores the
+	// model output to the camera aspect ratio before post-processing.
+	uint32_t inputWidth, inputHeight;
+	tf->model->getNetworkInputSize(tf->inputDims, inputWidth, inputHeight);
+
+	const double scale = std::min(static_cast<double>(inputWidth) / imageRGB.cols,
+					     static_cast<double>(inputHeight) / imageRGB.rows);
+	const int scaledWidth = std::clamp(static_cast<int>(std::lround(imageRGB.cols * scale)), 1,
+					  static_cast<int>(inputWidth));
+	const int scaledHeight = std::clamp(static_cast<int>(std::lround(imageRGB.rows * scale)), 1,
+					   static_cast<int>(inputHeight));
+	const int padLeft = (static_cast<int>(inputWidth) - scaledWidth) / 2;
+	const int padTop = (static_cast<int>(inputHeight) - scaledHeight) / 2;
+	cv::Mat resizedImageRGB;
+	cv::resize(imageRGB, resizedImageRGB, cv::Size(scaledWidth, scaledHeight), 0.0, 0.0,
+		   cv::INTER_LINEAR);
+	if (scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight)) {
+		cv::copyMakeBorder(resizedImageRGB, resizedImageRGB, padTop,
+				   static_cast<int>(inputHeight) - scaledHeight - padTop, padLeft,
+				   static_cast<int>(inputWidth) - scaledWidth - padLeft, cv::BORDER_REPLICATE);
+	}
+
+	// Prepare input to network
+	cv::Mat resizedImage, preprocessedImage;
+	resizedImageRGB.convertTo(resizedImage, CV_32F);
+
+	tf->model->prepareInputToNetwork(resizedImage, preprocessedImage);
+
+	tf->model->loadInputToTensor(preprocessedImage, inputWidth, inputHeight, tf->inputTensorValues);
+
+	// Run network inference
+	tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
+					 tf->outputTensor);
+
+	// Get output
+	cv::Mat outputImage = tf->model->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
+
+	// Assign output to input in some models that have temporal information
+	tf->model->assignOutputToInput(tf->outputTensorValues, tf->inputTensorValues);
+
+	// Post-process output. The image will now be in [0,1] float, BHWC format.
+	tf->model->postprocessOutput(outputImage);
+	if (outputImage.cols == static_cast<int>(inputWidth) && outputImage.rows == static_cast<int>(inputHeight) &&
+		(scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight))) {
+		const int outputPadLeft = static_cast<int>(std::lround(padLeft * outputImage.cols /
+										static_cast<double>(inputWidth)));
+		const int outputPadTop = static_cast<int>(std::lround(padTop * outputImage.rows /
+										static_cast<double>(inputHeight)));
+		const int outputWidth = std::max(1, static_cast<int>(std::lround(scaledWidth * outputImage.cols /
+										static_cast<double>(inputWidth))));
+		const int outputHeight = std::max(1, static_cast<int>(std::lround(scaledHeight * outputImage.rows /
+										static_cast<double>(inputHeight))));
+		const cv::Rect roi(std::clamp(outputPadLeft, 0, outputImage.cols - 1),
+					std::clamp(outputPadTop, 0, outputImage.rows - 1),
+					std::min(outputWidth, outputImage.cols - std::clamp(outputPadLeft, 0, outputImage.cols - 1)),
+					std::min(outputHeight, outputImage.rows - std::clamp(outputPadTop, 0, outputImage.rows - 1)));
+		cv::Mat cropped = outputImage(roi);
+		cv::resize(cropped, output, imageRGB.size(), 0.0, 0.0, cv::INTER_LINEAR);
+	} else {
+		output = outputImage.clone();
+	}
+	return true;
+}
+
+} // namespace
 
 int createOrtSession(filter_data *tf)
 {
@@ -32,7 +167,7 @@ int createOrtSession(filter_data *tf)
 	Ort::SessionOptions sessionOptions;
 
 	sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-	if (tf->useGPU != USEGPU_CPU) {
+	if (tf->useGPU != USEGPU_CPU && tf->useGPU != USEGPU_AUTO) {
 		sessionOptions.DisableMemPattern();
 		sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 	} else {
@@ -60,6 +195,11 @@ int createOrtSession(filter_data *tf)
 	bfree(modelFilepath_rawPtr);
 
 	try {
+#ifdef HAVE_ONNXRUNTIME_DML_EP
+		if (tf->useGPU == USEGPU_DIRECTML) {
+			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, 0));
+		}
+#endif
 #ifdef HAVE_ONNXRUNTIME_CUDA_EP
 		if (tf->useGPU == USEGPU_CUDA) {
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, 0));
@@ -127,49 +267,31 @@ int createOrtSession(filter_data *tf)
 
 bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
 {
-	if (tf->session.get() == nullptr) {
-		// Onnx runtime session is not initialized. Problem in initialization
+	cv::Mat floatOutput;
+	if (!runFilterModelInferenceFloat(tf, imageBGRA, floatOutput)) {
 		return false;
 	}
-	if (tf->model.get() == nullptr) {
-		// Model object is not initialized
-		return false;
-	}
-
-	// To RGB
-	cv::Mat imageRGB;
-	cv::cvtColor(imageBGRA, imageRGB, cv::COLOR_BGRA2RGB);
-
-	// Resize to network input size
-	uint32_t inputWidth, inputHeight;
-	tf->model->getNetworkInputSize(tf->inputDims, inputWidth, inputHeight);
-
-	cv::Mat resizedImageRGB;
-	cv::resize(imageRGB, resizedImageRGB, cv::Size(inputWidth, inputHeight));
-
-	// Prepare input to nework
-	cv::Mat resizedImage, preprocessedImage;
-	resizedImageRGB.convertTo(resizedImage, CV_32F);
-
-	tf->model->prepareInputToNetwork(resizedImage, preprocessedImage);
-
-	tf->model->loadInputToTensor(preprocessedImage, inputWidth, inputHeight, tf->inputTensorValues);
-
-	// Run network inference
-	tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
-
-	// Get output
-	// Map network output to cv::Mat
-	cv::Mat outputImage = tf->model->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
-
-	// Assign output to input in some models that have temporal information
-	tf->model->assignOutputToInput(tf->outputTensorValues, tf->inputTensorValues);
-
-	// Post-process output. The image will now be in [0,1] float, BHWC format
-	tf->model->postprocessOutput(outputImage);
-
-	// Convert [0,1] float to CV_8U [0,255]
-	outputImage.convertTo(output, CV_8U, 255.0);
-
+	floatOutput.convertTo(output, CV_8U, 255.0);
 	return true;
+}
+
+bool runFilterModelInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
+{
+	if (tf == nullptr || tf->session.get() == nullptr || tf->model.get() == nullptr || imageBGRA.empty()) {
+		return false;
+	}
+	if (tf->modelSelection == MODEL_RVM) {
+		return runRvmInference(tf, imageBGRA, output);
+	}
+	return runGenericInferenceFloat(tf, imageBGRA, output);
+}
+
+void resetFilterModelState(filter_data *tf)
+{
+	if (!tf || !tf->model) {
+		return;
+	}
+	if (auto *rvm = dynamic_cast<ModelRVM *>(tf->model.get())) {
+		rvm->resetRecurrentState();
+	}
 }

@@ -12,6 +12,7 @@
 - [Development workflow](DEVELOPMENT.md)
 - [Architecture](ARCHITECTURE.md)
 - [Release process](RELEASING.md)
+- [High-resolution background matting](BACKGROUND-MATTING.md)
 - [Background-mask post-processing](MASK-POST-PROCESSING.md)
 - [Local Linux OBS build](LOCAL-OBS-LINUX.md)
 - [Fedora build](BUILDING-FEDORA.md)

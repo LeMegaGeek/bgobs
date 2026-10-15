@@ -292,7 +292,15 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
   set(OpenCV_FOUND TRUE)
 endblock()
 
-block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIME_DELAYLOAD)
+block(
+  SCOPE_FOR POLICIES
+  VARIABLES
+  PROPAGATE
+    onnxruntime_FOUND
+    OBS_BG_ONNXRUNTIME_DELAYLOAD
+    BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR
+    BGOBS_ONNXRUNTIME_DML_LIBRARY
+)
   set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON)
   set(OBS_BG_ONNXRUNTIME_DELAYLOAD FALSE)
 
@@ -337,6 +345,34 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE onnxruntime_FOUND OBS_BG_ONNXRUNTIM
 
   if(NOT TARGET onnxruntime::onnxruntime)
     add_library(onnxruntime::onnxruntime ALIAS onnxruntime)
+  endif()
+
+  # DirectML is optional. CPU remains the portable fallback, while Windows
+  # packages built with an ONNX Runtime DML provider can accelerate AMD,
+  # Intel, and NVIDIA GPUs without changing the model interface.
+  set(BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR "")
+  set(BGOBS_ONNXRUNTIME_DML_LIBRARY "")
+  if(WIN32)
+    find_path(
+      BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR
+      NAMES dml_provider_factory.h
+      HINTS
+        "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/ort_x64-prefix"
+        "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/onnxruntime"
+        "${CMAKE_CURRENT_SOURCE_DIR}/.deps/onnxruntime"
+        "${OBS_BG_ONNXRUNTIME_INCLUDE_DIR}"
+      PATH_SUFFIXES include onnxruntime/core/providers/dml
+    )
+    find_library(
+      BGOBS_ONNXRUNTIME_DML_LIBRARY
+      NAMES onnxruntime_providers_dml
+      HINTS
+        "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/ort_x64-prefix"
+        "${CMAKE_CURRENT_SOURCE_DIR}/.deps_vendor/onnxruntime"
+        "${CMAKE_CURRENT_SOURCE_DIR}/.deps/onnxruntime"
+        "${OBS_BG_ONNXRUNTIME_LIB_DIR}"
+      PATH_SUFFIXES lib
+    )
   endif()
 endblock()
 
@@ -502,6 +538,12 @@ target_link_libraries(
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE BGOBS_VERSION_STRING="${PLUGIN_VERSION}")
 
+if(BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR AND BGOBS_ONNXRUNTIME_DML_LIBRARY)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_ONNXRUNTIME_DML_EP)
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${BGOBS_ONNXRUNTIME_DML_INCLUDE_DIR}")
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${BGOBS_ONNXRUNTIME_DML_LIBRARY}")
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   set(
@@ -519,6 +561,22 @@ if(BUILD_TESTING)
   add_executable(semver-test tests/update-checker/semver-test.cpp src/update-checker/semver.cpp)
   target_include_directories(semver-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   add_test(NAME semver COMMAND semver-test)
+
+  add_executable(rvm-shape-test tests/models/rvm-shape-test.cpp src/plugin-support.c)
+  target_include_directories(rvm-shape-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  target_compile_definitions(rvm-shape-test PRIVATE BGOBS_VERSION_STRING="test")
+  target_link_libraries(rvm-shape-test PRIVATE OBS::libobs onnxruntime::onnxruntime OpenCV::opencv_core)
+  add_test(NAME rvm-shape COMMAND rvm-shape-test)
+
+  add_executable(rvm-inference-test tests/models/rvm-inference-test.cpp src/plugin-support.c)
+  target_include_directories(rvm-inference-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  target_compile_definitions(rvm-inference-test PRIVATE BGOBS_VERSION_STRING="test")
+  target_link_libraries(rvm-inference-test PRIVATE OBS::libobs onnxruntime::onnxruntime OpenCV::opencv_core)
+  add_test(
+    NAME rvm-inference
+    COMMAND rvm-inference-test
+      "${CMAKE_CURRENT_SOURCE_DIR}/data/models/rvm_mobilenetv3_fp32.with_runtime_opt.ort"
+  )
 endif()
 
 ### Hide symbols

@@ -36,7 +36,7 @@ VertDataOut VSDefault(VertDataIn v_in)
 float4 PSAlphaMaskRGBAWithBlur(VertDataOut v_in) : TARGET
 {
 	float4 inputRGBA = image.Sample(textureSampler, v_in.uv);
-	inputRGBA.rgb = max(float3(0.0, 0.0, 0.0), inputRGBA.rgb / inputRGBA.a);
+	inputRGBA.rgb = max(float3(0.0, 0.0, 0.0), inputRGBA.rgb / max(inputRGBA.a, 0.0001));
 
 	float4 outputRGBA;
 	float a = (1.0 - alphamask.Sample(textureSampler, v_in.uv).r) * inputRGBA.a;
@@ -54,7 +54,7 @@ float4 PSTakeBlur(VertDataOut v_in) : TARGET
 float4 PSAlphaMaskRGBAWithoutBlur(VertDataOut v_in) : TARGET
 {
 	float4 inputRGBA = image.Sample(textureSampler, v_in.uv);
-	inputRGBA.rgb = max(float3(0.0, 0.0, 0.0), inputRGBA.rgb / inputRGBA.a);
+	inputRGBA.rgb = max(float3(0.0, 0.0, 0.0), inputRGBA.rgb / max(inputRGBA.a, 0.0001));
 
 	float4 outputRGBA;
 	float a = (1.0 - alphamask.Sample(textureSampler, v_in.uv).r) * inputRGBA.a;
@@ -74,7 +74,7 @@ technique DrawWithBlur
 	pass
 	{
 		vertex_shader = VSDefault(v_in);
-		pixel_shader  = PSTakeBlur(v_in);
+		pixel_shader  = PSAlphaMaskRGBAWithBlur(v_in);
 	}
 }
 
@@ -83,7 +83,7 @@ technique DrawWithFocalBlur
 	pass
 	{
 		vertex_shader = VSDefault(v_in);
-		pixel_shader  = PSTakeBlur(v_in);
+		pixel_shader  = PSAlphaMaskRGBAWithBlur(v_in);
 	}
 }
 
