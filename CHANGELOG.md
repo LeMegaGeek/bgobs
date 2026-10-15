@@ -3,6 +3,20 @@
 This file records user-visible BGOBS changes. Historical entries before the
 BGOBS fork remain available in Git history and their original tags.
 
+## 0.3.21 - 2026-10-15
+
+### Added
+
+- Preserve soft alpha output for high-resolution RVM background matting.
+- Support dynamic RVM tensor shapes and recurrent state reset when the source
+  resolution changes.
+
+### Changed
+
+- Keep the original camera aspect ratio for generic model inference.
+- Add optional DirectML execution-provider support on Windows.
+- Add RVM tensor-shape and inference coverage to the native test suite.
+
 ## 0.3.20 - 2026-07-29
 
 ### Changed

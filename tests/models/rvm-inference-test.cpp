@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 
@@ -24,7 +25,9 @@ int main(int argc, char **argv)
 		Ort::SessionOptions options;
 		options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 		// Keep the session owned by a unique_ptr as the plugin does.
-		std::unique_ptr<Ort::Session> sessionPtr = std::make_unique<Ort::Session>(env, argv[1], options);
+		const std::filesystem::path modelPath(argv[1]);
+		std::unique_ptr<Ort::Session> sessionPtr =
+			std::make_unique<Ort::Session>(env, modelPath.c_str(), options);
 
 		ModelRVM model;
 		std::vector<Ort::AllocatedStringPtr> inputNames;
