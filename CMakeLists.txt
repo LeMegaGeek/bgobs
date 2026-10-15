@@ -548,20 +548,10 @@ include(CTest)
 if(BUILD_TESTING)
   function(bgobs_copy_test_runtime target)
     if(WIN32)
-      set(BGOBS_TEST_RUNTIME_FILES "$<TARGET_RUNTIME_DLLS:${target}>")
-      foreach(BGOBS_TEST_RUNTIME_TARGET IN ITEMS onnxruntime::onnxruntime OpenCV::opencv_core)
-        if(TARGET ${BGOBS_TEST_RUNTIME_TARGET})
-          list(APPEND BGOBS_TEST_RUNTIME_FILES "$<TARGET_RUNTIME_DLLS:${BGOBS_TEST_RUNTIME_TARGET}>")
-          get_target_property(BGOBS_TEST_RUNTIME_TYPE ${BGOBS_TEST_RUNTIME_TARGET} TYPE)
-          if(BGOBS_TEST_RUNTIME_TYPE STREQUAL "SHARED_LIBRARY")
-            list(APPEND BGOBS_TEST_RUNTIME_FILES "$<TARGET_FILE:${BGOBS_TEST_RUNTIME_TARGET}>")
-          endif()
-        endif()
-      endforeach()
       add_custom_command(
         TARGET ${target}
         POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy -t "$<TARGET_FILE_DIR:${target}>" ${BGOBS_TEST_RUNTIME_FILES}
+        COMMAND "${CMAKE_COMMAND}" -E copy -t "$<TARGET_FILE_DIR:${target}>" "$<TARGET_RUNTIME_DLLS:${target}>"
         COMMAND_EXPAND_LISTS
       )
     endif()

@@ -3,6 +3,13 @@
 This file records user-visible BGOBS changes. Historical entries before the
 BGOBS fork remain available in Git history and their original tags.
 
+## 0.3.25 - 2026-10-15
+
+### Fixed
+
+- Keep Windows RVM tests independent from the OBS runtime while staging their
+  ONNX Runtime DLLs, so the native test suite can start reliably.
+
 ## 0.3.24 - 2026-10-15
 
 ### Fixed
