@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 LeMegaGeek <d.github@chey.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <obs-module.h>
@@ -58,7 +59,7 @@ int main(int argc, char **argv)
 		for (auto &name : outputNames)
 			rawOutputs.push_back(name.get());
 		sessionPtr->Run(Ort::RunOptions{nullptr}, rawInputs.data(), inputTensors.data(), inputTensors.size(),
-					 rawOutputs.data(), outputTensors.data(), outputTensors.size());
+				rawOutputs.data(), outputTensors.data(), outputTensors.size());
 
 		cv::Mat alpha = model.getNetworkOutput(outputDims, outputValues);
 		model.postprocessOutput(alpha);
@@ -93,7 +94,7 @@ int main(int argc, char **argv)
 					   outputTensors);
 		model.loadInputToTensor(chw, 320, 192, inputValues);
 		sessionPtr->Run(Ort::RunOptions{nullptr}, rawInputs.data(), inputTensors.data(), inputTensors.size(),
-					 rawOutputs.data(), outputTensors.data(), outputTensors.size());
+				rawOutputs.data(), outputTensors.data(), outputTensors.size());
 
 		model.resetRecurrentState();
 		model.configureForFrame(inputDims, outputDims, 640, 360, 0.25f);
@@ -103,7 +104,7 @@ int main(int argc, char **argv)
 		model.prepareInputToNetwork(largerRgb, chw);
 		model.loadInputToTensor(chw, 640, 360, inputValues);
 		sessionPtr->Run(Ort::RunOptions{nullptr}, rawInputs.data(), inputTensors.data(), inputTensors.size(),
-					 rawOutputs.data(), outputTensors.data(), outputTensors.size());
+				rawOutputs.data(), outputTensors.data(), outputTensors.size());
 		alpha = model.getNetworkOutput(outputDims, outputValues);
 		model.postprocessOutput(alpha);
 		if (alpha.rows != 360 || alpha.cols != 640 || alpha.type() != CV_32FC1) {

@@ -30,7 +30,8 @@ public:
 				       std::vector<std::vector<int64_t>> &outputDims) override
 	{
 		if (session->GetInputCount() != 2 || session->GetOutputCount() < 2) {
-			obs_log(LOG_ERROR, "Background Matting V2 model must expose two inputs and at least two outputs");
+			obs_log(LOG_ERROR,
+				"Background Matting V2 model must expose two inputs and at least two outputs");
 			return false;
 		}
 		inputDims = {{1, 3, 1, 1}, {1, 3, 1, 1}};
@@ -46,24 +47,24 @@ public:
 	}
 
 	void loadStudioFrames(const cv::Mat &sourceCHW, const cv::Mat &backgroundCHW,
-			       std::vector<std::vector<float>> &inputTensorValues)
+			      std::vector<std::vector<float>> &inputTensorValues)
 	{
 		std::copy(sourceCHW.begin<float>(), sourceCHW.end<float>(), inputTensorValues[0].begin());
 		std::copy(backgroundCHW.begin<float>(), backgroundCHW.end<float>(), inputTensorValues[1].begin());
 	}
 
 	cv::Mat getNetworkOutput(const std::vector<std::vector<int64_t>> &outputDims,
-				  std::vector<std::vector<float>> &outputTensorValues) override
+				 std::vector<std::vector<float>> &outputTensorValues) override
 	{
 		if (outputDims.empty() || outputTensorValues.empty()) {
 			return {};
 		}
 		return cv::Mat(static_cast<int>(outputDims[0][2]), static_cast<int>(outputDims[0][3]), CV_32FC1,
-				outputTensorValues[0].data());
+			       outputTensorValues[0].data());
 	}
 
 	cv::Mat getForegroundOutput(const std::vector<std::vector<int64_t>> &outputDims,
-				     std::vector<std::vector<float>> &outputTensorValues)
+				    std::vector<std::vector<float>> &outputTensorValues)
 	{
 		if (outputDims.size() < 2 || outputTensorValues.size() < 2) {
 			return {};

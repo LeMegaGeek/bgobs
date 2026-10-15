@@ -501,8 +501,8 @@ static std::string studioBackgroundPathForSource(obs_source_t *source)
 	}
 	const char *uuid = source ? obs_source_get_uuid(source) : nullptr;
 	const std::string fileKey = uuid && uuid[0] != '\0' ? uuid : "bgobs-filter";
-	const std::filesystem::path result = std::filesystem::path(configDirectory) / "studio-backgrounds" /
-					     (fileKey + ".png");
+	const std::filesystem::path result =
+		std::filesystem::path(configDirectory) / "studio-backgrounds" / (fileKey + ".png");
 	bfree(configDirectory);
 	return result.string();
 }
@@ -672,18 +672,16 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_property_list_add_string(p_beauty_preset, obs_module_text("PresetCustom"), BGOBS_PRESET_CUSTOM);
 	obs_property_set_modified_callback(p_beauty_preset, beauty_preset_modified);
 
-	obs_property_t *p_matting_mode = obs_properties_add_list(
-		props, "matting_mode", obs_module_text("MattingMode"), OBS_COMBO_TYPE_LIST,
-		OBS_COMBO_FORMAT_STRING);
+	obs_property_t *p_matting_mode = obs_properties_add_list(props, "matting_mode", obs_module_text("MattingMode"),
+								 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingAutomatic"), BGOBS_MATTING_AUTO);
 	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingQuality"), BGOBS_MATTING_QUALITY);
-	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingPerformance"),
-				     BGOBS_MATTING_PERFORMANCE);
+	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingPerformance"), BGOBS_MATTING_PERFORMANCE);
 	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingLegacy"), BGOBS_MATTING_LEGACY);
 	obs_property_list_add_string(p_matting_mode, obs_module_text("MattingStudioCalibrated"), BGOBS_MATTING_STUDIO);
 	obs_property_set_modified_callback(p_matting_mode, mattingModeModified);
 	obs_properties_add_text(props, "studio_capture_instructions", obs_module_text("StudioCaptureInstructions"),
-				 OBS_TEXT_INFO);
+				OBS_TEXT_INFO);
 	obs_properties_add_button2(props, "studio_capture_background", obs_module_text("StudioCaptureButton"),
 				   startStudioBackgroundCapture, data);
 	bool studioMode = false;
@@ -888,8 +886,8 @@ void background_filter_update(void *data, obs_data_t *settings)
 	tf->settingsVersion = static_cast<int>(obs_data_get_int(settings, "settings_version"));
 
 	const char *mattingModeValue = obs_data_get_string(settings, "matting_mode");
-	const std::string mattingMode =
-		mattingModeValue && mattingModeValue[0] != '\0' ? mattingModeValue : BGOBS_MATTING_AUTO;
+	const std::string mattingMode = mattingModeValue && mattingModeValue[0] != '\0' ? mattingModeValue
+											: BGOBS_MATTING_AUTO;
 	{
 		std::lock_guard<std::mutex> lock(tf->modelMutex);
 		tf->mattingMode = mattingMode;
@@ -956,8 +954,7 @@ void background_filter_update(void *data, obs_data_t *settings)
 		const unsigned int hardwareThreads = std::max(2u, std::thread::hardware_concurrency());
 		newNumThreads = std::clamp(hardwareThreads / 2u, 2u, 4u);
 	}
-	tf->nativeAlpha = (newModel == MODEL_RVM || newModel == MODEL_BGMV2) &&
-			  mattingMode != BGOBS_MATTING_LEGACY;
+	tf->nativeAlpha = (newModel == MODEL_RVM || newModel == MODEL_BGMV2) && mattingMode != BGOBS_MATTING_LEGACY;
 	tf->rvmDownsampleRatio = 0.25f;
 	invalidateInference(tf.get());
 
@@ -1359,9 +1356,10 @@ static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 					continue;
 				}
 				if (nativeAlpha) {
-					tf->rvmDownsampleRatio = chooseRvmDownsampleRatio(tf->mattingMode, frame.cols, frame.rows);
+					tf->rvmDownsampleRatio =
+						chooseRvmDownsampleRatio(tf->mattingMode, frame.cols, frame.rows);
 					inferenceSucceeded = runFilterModelInferenceFloat(tf.get(), frame, output,
-									       &reconstructedForegroundBGRA);
+											  &reconstructedForegroundBGRA);
 				} else {
 					inferenceSucceeded = runFilterModelInference(tf.get(), frame, output);
 					reconstructedForegroundBGRA = frame;
@@ -1374,7 +1372,8 @@ static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 
 			if (nativeAlpha) {
 				if (output.type() != CV_32FC1) {
-					obs_log(LOG_WARNING, "Matting model returned a non-floating alpha; frame discarded");
+					obs_log(LOG_WARNING,
+						"Matting model returned a non-floating alpha; frame discarded");
 					continue;
 				}
 				std::lock_guard<std::mutex> lock(tf->outputLock);
@@ -1403,8 +1402,8 @@ static void inferenceWorkerLoop(std::shared_ptr<bgobs_background_filter> tf)
 					}
 					previousBackgroundMask = tf->lastBackgroundMask.clone();
 				}
-				backgroundMask = bgobs::smoothTemporalBackgroundMask(backgroundMask, previousBackgroundMask,
-										   temporalSettings);
+				backgroundMask = bgobs::smoothTemporalBackgroundMask(
+					backgroundMask, previousBackgroundMask, temporalSettings);
 				{
 					std::lock_guard<std::mutex> lock(tf->outputLock);
 					if (generation != tf->inferenceGeneration.load()) {
@@ -1530,8 +1529,7 @@ static bool processStudioCaptureFrame(const std::shared_ptr<bgobs_background_fil
 		if (tf->studioCaptureElapsedSeconds < 1.0f || tf->studioCaptureFrameCount == 0) {
 			return false;
 		}
-		tf->studioCaptureAccumulator.convertTo(capturedBackground, CV_8UC4,
-							  1.0 / tf->studioCaptureFrameCount);
+		tf->studioCaptureAccumulator.convertTo(capturedBackground, CV_8UC4, 1.0 / tf->studioCaptureFrameCount);
 		tf->studioCaptureAccumulator.release();
 		tf->studioCaptureState = StudioCaptureState::Saving;
 	}
@@ -1543,7 +1541,8 @@ static bool processStudioCaptureFrame(const std::shared_ptr<bgobs_background_fil
 	const std::string path = tf->studioBackgroundPath;
 	{
 		std::lock_guard<std::mutex> lock(tf->studioCaptureMutex);
-		tf->studioBackgroundSaveThread = std::thread([tf, path, capturedBackground = std::move(capturedBackground)] {
+		tf->studioBackgroundSaveThread = std::thread([tf, path,
+							      capturedBackground = std::move(capturedBackground)] {
 			bool saved = false;
 			try {
 				std::error_code error;
@@ -1555,7 +1554,8 @@ static bool processStudioCaptureFrame(const std::shared_ptr<bgobs_background_fil
 				obs_log(LOG_WARNING, "Unable to save calibrated background: %s", error.what());
 			}
 			if (!saved) {
-				obs_log(LOG_WARNING, "Calibrated background could not be saved; returning to automatic matting");
+				obs_log(LOG_WARNING,
+					"Calibrated background could not be saved; returning to automatic matting");
 				std::lock_guard<std::mutex> backgroundLock(tf->studioBackgroundMutex);
 				tf->studioBackgroundBGRA.release();
 			}
@@ -1704,13 +1704,13 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 		const bool useNativeAlpha = tf->nativeAlpha.load() && !tf->backgroundAlpha.empty() &&
 					    tf->backgroundAlphaGeneration == tf->inferenceGeneration.load();
 		const cv::Mat &mask = useNativeAlpha ? tf->backgroundAlpha : tf->backgroundMask;
-		const bool packetDimensionsMatch = !mask.empty() && !tf->backgroundSourceBGRA.empty() &&
-					   !tf->backgroundForegroundBGRA.empty() && mask.cols == static_cast<int>(width) &&
-					   mask.rows == static_cast<int>(height) &&
-					   tf->backgroundSourceBGRA.cols == static_cast<int>(width) &&
-					   tf->backgroundSourceBGRA.rows == static_cast<int>(height) &&
-					   tf->backgroundForegroundBGRA.cols == static_cast<int>(width) &&
-					   tf->backgroundForegroundBGRA.rows == static_cast<int>(height);
+		const bool packetDimensionsMatch =
+			!mask.empty() && !tf->backgroundSourceBGRA.empty() && !tf->backgroundForegroundBGRA.empty() &&
+			mask.cols == static_cast<int>(width) && mask.rows == static_cast<int>(height) &&
+			tf->backgroundSourceBGRA.cols == static_cast<int>(width) &&
+			tf->backgroundSourceBGRA.rows == static_cast<int>(height) &&
+			tf->backgroundForegroundBGRA.cols == static_cast<int>(width) &&
+			tf->backgroundForegroundBGRA.rows == static_cast<int>(height);
 		if (!packetDimensionsMatch) {
 			// Never composite a mask over a different camera frame or resolution.
 			if (tf->source) {
@@ -1720,25 +1720,28 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 		}
 		const uint64_t frameSequence = tf->backgroundAlphaFrameSequence;
 		if (tf->backgroundAlphaCapturedAt != std::chrono::steady_clock::time_point{}) {
-			tf->lastFrameLatencyMs = std::chrono::duration<float, std::milli>(
-						  std::chrono::steady_clock::now() - tf->backgroundAlphaCapturedAt)
-					  .count();
+			tf->lastFrameLatencyMs =
+				std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() -
+									 tf->backgroundAlphaCapturedAt)
+					.count();
 		}
 
 		const uint32_t maskWidth = width;
 		const uint32_t maskHeight = height;
 		const gs_color_format requestedFormat = useNativeAlpha ? GS_R16F : GS_R8;
-		const bool formatMismatch = useNativeAlpha ?
-			(tf->alphaTextureFormat != GS_R16F && tf->alphaTextureFormat != GS_R8) :
-			(tf->alphaTextureFormat != GS_R8);
+		const bool formatMismatch =
+			useNativeAlpha ? (tf->alphaTextureFormat != GS_R16F && tf->alphaTextureFormat != GS_R8)
+				       : (tf->alphaTextureFormat != GS_R8);
 		if (!tf->alphaTexture || tf->alphaTextureWidth != maskWidth || tf->alphaTextureHeight != maskHeight ||
 		    formatMismatch) {
 			gs_texture_destroy(tf->alphaTexture);
-			tf->alphaTexture = gs_texture_create(maskWidth, maskHeight, requestedFormat, 1, nullptr, GS_DYNAMIC);
+			tf->alphaTexture =
+				gs_texture_create(maskWidth, maskHeight, requestedFormat, 1, nullptr, GS_DYNAMIC);
 			if (!tf->alphaTexture && requestedFormat == GS_R16F) {
 				// Some older graphics backends do not expose R16F textures. The
 				// float processing still protects the alpha until this final upload.
-				tf->alphaTexture = gs_texture_create(maskWidth, maskHeight, GS_R8, 1, nullptr, GS_DYNAMIC);
+				tf->alphaTexture =
+					gs_texture_create(maskWidth, maskHeight, GS_R8, 1, nullptr, GS_DYNAMIC);
 				tf->alphaTextureFormat = GS_R8;
 			} else {
 				tf->alphaTextureFormat = requestedFormat;
@@ -1790,9 +1793,10 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 					for (size_t i = 0; i < tf->alphaUploadBuffer.size(); ++i) {
 						tf->alphaUploadBuffer[i] = floatToHalf(alpha.ptr<float>()[i]);
 					}
-					gs_texture_set_image(tf->alphaTexture,
-							     reinterpret_cast<const uint8_t *>(tf->alphaUploadBuffer.data()),
-							     maskWidth * sizeof(uint16_t), false);
+					gs_texture_set_image(
+						tf->alphaTexture,
+						reinterpret_cast<const uint8_t *>(tf->alphaUploadBuffer.data()),
+						maskWidth * sizeof(uint16_t), false);
 				} else {
 					cv::Mat alpha8;
 					alpha.convertTo(alpha8, CV_8UC1, 255.0);
@@ -1800,20 +1804,21 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 							     static_cast<uint32_t>(alpha8.step[0]), false);
 				}
 			} else {
-				gs_texture_set_image(tf->alphaTexture, mask.data, static_cast<uint32_t>(mask.step[0]), false);
+				gs_texture_set_image(tf->alphaTexture, mask.data, static_cast<uint32_t>(mask.step[0]),
+						     false);
 			}
-		tf->uploadedMattingFrameId = frameSequence;
+			tf->uploadedMattingFrameId = frameSequence;
 		}
 	}
 
 	// Output the masked image. Mask preview is a diagnostic path and should not spend time rendering blur passes.
-	gs_texture_t *blurredTexture = tf->showMaskPreview ? nullptr
-										: blur_background(tf, width, height, tf->alphaTexture,
-											  tf->sourceFrameTexture);
+	gs_texture_t *blurredTexture =
+		tf->showMaskPreview ? nullptr
+				    : blur_background(tf, width, height, tf->alphaTexture, tf->sourceFrameTexture);
 
 	const enum gs_color_space sourceColorSpace = obs_source_get_color_space(tf->source, 0, nullptr);
 	if (!obs_source_process_filter_begin_with_color_space(tf->source, GS_RGBA, sourceColorSpace,
-								 OBS_ALLOW_DIRECT_RENDERING)) {
+							      OBS_ALLOW_DIRECT_RENDERING)) {
 		if (tf->source) {
 			obs_source_skip_video_filter(tf->source);
 		}
@@ -1824,8 +1829,7 @@ void background_filter_video_render(void *data, gs_effect_t *_effect)
 	gs_eparam_t *blurredBackground = gs_effect_get_param_by_name(tf->effect, "blurredBackground");
 	gs_eparam_t *matchedSource = gs_effect_get_param_by_name(tf->effect, "matchedSource");
 	gs_eparam_t *reconstructedForeground = gs_effect_get_param_by_name(tf->effect, "reconstructedForeground");
-	gs_eparam_t *useReconstructedForeground =
-		gs_effect_get_param_by_name(tf->effect, "useReconstructedForeground");
+	gs_eparam_t *useReconstructedForeground = gs_effect_get_param_by_name(tf->effect, "useReconstructedForeground");
 
 	gs_effect_set_texture(alphamask, tf->alphaTexture);
 	gs_effect_set_texture(matchedSource, tf->sourceFrameTexture);

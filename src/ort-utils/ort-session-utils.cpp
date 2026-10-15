@@ -33,8 +33,7 @@
 
 namespace {
 
-bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output,
-		     cv::Mat *reconstructedForegroundBGRA)
+bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output, cv::Mat *reconstructedForegroundBGRA)
 {
 	auto *rvm = dynamic_cast<ModelRVM *>(tf->model.get());
 	if (!rvm || imageBGRA.empty() || imageBGRA.type() != CV_8UC4) {
@@ -43,10 +42,9 @@ bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output,
 
 	const int sourceWidth = imageBGRA.cols;
 	const int sourceHeight = imageBGRA.rows;
-	rvm->configureForFrame(tf->inputDims, tf->outputDims, sourceWidth, sourceHeight,
-			       tf->rvmDownsampleRatio.load());
-	rvm->prepareTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues,
-				  tf->inputTensorValues, tf->inputTensor, tf->outputTensor);
+	rvm->configureForFrame(tf->inputDims, tf->outputDims, sourceWidth, sourceHeight, tf->rvmDownsampleRatio.load());
+	rvm->prepareTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues, tf->inputTensorValues,
+				  tf->inputTensor, tf->outputTensor);
 
 	// RVM expects RGB BCHW data in [0, 1] at the original source resolution.
 	// Do not resize the source here: the model's downsample_ratio is applied
@@ -60,8 +58,7 @@ bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output,
 	rvm->loadInputToTensor(preprocessedImage, static_cast<uint32_t>(sourceWidth),
 			       static_cast<uint32_t>(sourceHeight), tf->inputTensorValues);
 
-	rvm->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
-				 tf->outputTensor);
+	rvm->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
 
 	cv::Mat outputImage = rvm->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
 	rvm->postprocessOutput(outputImage);
@@ -114,12 +111,11 @@ bool runBackgroundMattingV2Inference(filter_data *tf, const cv::Mat &imageBGRA, 
 	// [0, 1]. Keep HD untouched, cap larger sources, and upscale tiny inputs so
 	// the export's fixed TopK operation has at least 5,000 spatial candidates.
 	const int largestSide = std::max(imageBGRA.cols, imageBGRA.rows);
-	const double minimumInputScale = std::sqrt(100000.0 /
-						   (static_cast<double>(imageBGRA.cols) * imageBGRA.rows));
-	const double scale = std::min(largestSide > 1920 ? 1920.0 / largestSide : 1.0,
-				       std::max(1.0, minimumInputScale));
+	const double minimumInputScale = std::sqrt(100000.0 / (static_cast<double>(imageBGRA.cols) * imageBGRA.rows));
+	const double scale =
+		std::min(largestSide > 1920 ? 1920.0 / largestSide : 1.0, std::max(1.0, minimumInputScale));
 	const cv::Size modelSize(std::max(1, static_cast<int>(std::lround(imageBGRA.cols * scale))),
-			  std::max(1, static_cast<int>(std::lround(imageBGRA.rows * scale))));
+				 std::max(1, static_cast<int>(std::lround(imageBGRA.rows * scale))));
 	cv::Mat &sourceRGB = tf->studioSourceRGB;
 	cv::Mat &backgroundRGB = tf->studioBackgroundRGB;
 	cv::cvtColor(imageBGRA, sourceRGB, cv::COLOR_BGRA2RGB);
@@ -142,21 +138,20 @@ bool runBackgroundMattingV2Inference(filter_data *tf, const cv::Mat &imageBGRA, 
 	hwc_to_chw(sourceFloat, sourceCHW);
 	hwc_to_chw(backgroundFloat, backgroundCHW);
 
-	const std::vector<std::vector<int64_t>> expectedInputDims = {
-		{1, 3, modelSize.height, modelSize.width}, {1, 3, modelSize.height, modelSize.width}};
-	const std::vector<std::vector<int64_t>> expectedOutputDims = {
-		{1, 1, modelSize.height, modelSize.width}, {1, 3, modelSize.height, modelSize.width}};
+	const std::vector<std::vector<int64_t>> expectedInputDims = {{1, 3, modelSize.height, modelSize.width},
+								     {1, 3, modelSize.height, modelSize.width}};
+	const std::vector<std::vector<int64_t>> expectedOutputDims = {{1, 1, modelSize.height, modelSize.width},
+								      {1, 3, modelSize.height, modelSize.width}};
 	const bool tensorShapeChanged = tf->inputDims != expectedInputDims || tf->outputDims != expectedOutputDims;
 	model->configureForFrame(tf->inputDims, tf->outputDims, modelSize.width, modelSize.height);
 	if (tensorShapeChanged || tf->inputTensor.empty() || tf->outputTensor.empty() ||
 	    tf->inputTensorValues.size() != tf->inputDims.size() ||
 	    tf->outputTensorValues.size() != tf->outputDims.size()) {
-		model->allocateTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues, tf->inputTensorValues,
-				     tf->inputTensor, tf->outputTensor);
+		model->allocateTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues,
+					     tf->inputTensorValues, tf->inputTensor, tf->outputTensor);
 	}
 	model->loadStudioFrames(sourceCHW, backgroundCHW, tf->inputTensorValues);
-	model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
-				   tf->outputTensor);
+	model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
 
 	cv::Mat alpha = model->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
 	model->postprocessOutput(alpha);
@@ -202,16 +197,15 @@ bool runGenericInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat
 	tf->model->getNetworkInputSize(tf->inputDims, inputWidth, inputHeight);
 
 	const double scale = std::min(static_cast<double>(inputWidth) / imageRGB.cols,
-					     static_cast<double>(inputHeight) / imageRGB.rows);
-	const int scaledWidth = std::clamp(static_cast<int>(std::lround(imageRGB.cols * scale)), 1,
-					  static_cast<int>(inputWidth));
-	const int scaledHeight = std::clamp(static_cast<int>(std::lround(imageRGB.rows * scale)), 1,
-					   static_cast<int>(inputHeight));
+				      static_cast<double>(inputHeight) / imageRGB.rows);
+	const int scaledWidth =
+		std::clamp(static_cast<int>(std::lround(imageRGB.cols * scale)), 1, static_cast<int>(inputWidth));
+	const int scaledHeight =
+		std::clamp(static_cast<int>(std::lround(imageRGB.rows * scale)), 1, static_cast<int>(inputHeight));
 	const int padLeft = (static_cast<int>(inputWidth) - scaledWidth) / 2;
 	const int padTop = (static_cast<int>(inputHeight) - scaledHeight) / 2;
 	cv::Mat resizedImageRGB;
-	cv::resize(imageRGB, resizedImageRGB, cv::Size(scaledWidth, scaledHeight), 0.0, 0.0,
-		   cv::INTER_LINEAR);
+	cv::resize(imageRGB, resizedImageRGB, cv::Size(scaledWidth, scaledHeight), 0.0, 0.0, cv::INTER_LINEAR);
 	if (scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight)) {
 		cv::copyMakeBorder(resizedImageRGB, resizedImageRGB, padTop,
 				   static_cast<int>(inputHeight) - scaledHeight - padTop, padLeft,
@@ -227,8 +221,7 @@ bool runGenericInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat
 	tf->model->loadInputToTensor(preprocessedImage, inputWidth, inputHeight, tf->inputTensorValues);
 
 	// Run network inference
-	tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
-					 tf->outputTensor);
+	tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
 
 	// Get output
 	cv::Mat outputImage = tf->model->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
@@ -239,19 +232,20 @@ bool runGenericInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat
 	// Post-process output. The image will now be in [0,1] float, BHWC format.
 	tf->model->postprocessOutput(outputImage);
 	if (outputImage.cols == static_cast<int>(inputWidth) && outputImage.rows == static_cast<int>(inputHeight) &&
-		(scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight))) {
-		const int outputPadLeft = static_cast<int>(std::lround(padLeft * outputImage.cols /
-										static_cast<double>(inputWidth)));
-		const int outputPadTop = static_cast<int>(std::lround(padTop * outputImage.rows /
-										static_cast<double>(inputHeight)));
+	    (scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight))) {
+		const int outputPadLeft =
+			static_cast<int>(std::lround(padLeft * outputImage.cols / static_cast<double>(inputWidth)));
+		const int outputPadTop =
+			static_cast<int>(std::lround(padTop * outputImage.rows / static_cast<double>(inputHeight)));
 		const int outputWidth = std::max(1, static_cast<int>(std::lround(scaledWidth * outputImage.cols /
-										static_cast<double>(inputWidth))));
+										 static_cast<double>(inputWidth))));
 		const int outputHeight = std::max(1, static_cast<int>(std::lround(scaledHeight * outputImage.rows /
-										static_cast<double>(inputHeight))));
-		const cv::Rect roi(std::clamp(outputPadLeft, 0, outputImage.cols - 1),
-					std::clamp(outputPadTop, 0, outputImage.rows - 1),
-					std::min(outputWidth, outputImage.cols - std::clamp(outputPadLeft, 0, outputImage.cols - 1)),
-					std::min(outputHeight, outputImage.rows - std::clamp(outputPadTop, 0, outputImage.rows - 1)));
+										  static_cast<double>(inputHeight))));
+		const cv::Rect roi(
+			std::clamp(outputPadLeft, 0, outputImage.cols - 1),
+			std::clamp(outputPadTop, 0, outputImage.rows - 1),
+			std::min(outputWidth, outputImage.cols - std::clamp(outputPadLeft, 0, outputImage.cols - 1)),
+			std::min(outputHeight, outputImage.rows - std::clamp(outputPadTop, 0, outputImage.rows - 1)));
 		cv::Mat cropped = outputImage(roi);
 		cv::resize(cropped, output, imageRGB.size(), 0.0, 0.0, cv::INTER_LINEAR);
 	} else {

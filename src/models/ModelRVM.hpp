@@ -56,15 +56,15 @@ public:
 	 * promoted to the output state shapes by the inference wrapper.
 	 */
 	void configureForFrame(std::vector<std::vector<int64_t>> &inputDims,
-				       std::vector<std::vector<int64_t>> &outputDims,
-				       int sourceWidth, int sourceHeight, float ratio)
+			       std::vector<std::vector<int64_t>> &outputDims, int sourceWidth, int sourceHeight,
+			       float ratio)
 	{
 		downsampleRatio = std::clamp(ratio, 0.05f, 1.0f);
 		const int smallWidth = downsampleDimension(sourceWidth, downsampleRatio);
 		const int smallHeight = downsampleDimension(sourceHeight, downsampleRatio);
 
 		const bool tensorLayoutChanged = configuredWidth != sourceWidth || configuredHeight != sourceHeight ||
-					 std::abs(configuredRatio - downsampleRatio) > 0.000001f;
+						 std::abs(configuredRatio - downsampleRatio) > 0.000001f;
 		if (tensorLayoutChanged) {
 			recurrentStateInitialized = false;
 		}
@@ -78,7 +78,8 @@ public:
 		inputDims[5] = {1};
 		for (size_t i = 1; i < 5; ++i) {
 			const size_t stateOutput = i + 1;
-			if (recurrentStateInitialized && stateOutput < outputDims.size() && outputDims[stateOutput].size() == 4) {
+			if (recurrentStateInitialized && stateOutput < outputDims.size() &&
+			    outputDims[stateOutput].size() == 4) {
 				inputDims[i] = outputDims[stateOutput];
 			} else {
 				inputDims[i] = {1, 1, 1, 1};
@@ -90,10 +91,9 @@ public:
 		constexpr int stateChannels[] = {16, 20, 40, 64};
 		for (size_t i = 1; i < 5; ++i) {
 			const int divisor = 2 << (static_cast<int>(i) - 1);
-			outputDims[i + 1] = {1,
-					static_cast<int64_t>(stateChannels[i - 1]),
-					featureDimension(smallHeight, divisor),
-					featureDimension(smallWidth, divisor)};
+			outputDims[i + 1] = {1, static_cast<int64_t>(stateChannels[i - 1]),
+					     featureDimension(smallHeight, divisor),
+					     featureDimension(smallWidth, divisor)};
 		}
 	}
 
@@ -102,8 +102,7 @@ public:
 				  const std::vector<std::vector<int64_t>> &outputDims,
 				  std::vector<std::vector<float>> &outputTensorValues,
 				  std::vector<std::vector<float>> &inputTensorValues,
-				  std::vector<Ort::Value> &inputTensor,
-				  std::vector<Ort::Value> &outputTensor)
+				  std::vector<Ort::Value> &inputTensor, std::vector<Ort::Value> &outputTensor)
 	{
 		Ort::MemoryInfo memoryInfo =
 			Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator, OrtMemType::OrtMemTypeDefault);
@@ -129,14 +128,14 @@ public:
 		inputTensor.clear();
 		for (size_t i = 0; i < inputDims.size(); ++i) {
 			inputTensor.push_back(Ort::Value::CreateTensor<float>(
-				memoryInfo, inputTensorValues[i].data(), inputTensorValues[i].size(), inputDims[i].data(),
-				inputDims[i].size()));
+				memoryInfo, inputTensorValues[i].data(), inputTensorValues[i].size(),
+				inputDims[i].data(), inputDims[i].size()));
 		}
 		outputTensor.clear();
 		for (size_t i = 0; i < outputDims.size(); ++i) {
 			outputTensor.push_back(Ort::Value::CreateTensor<float>(
-				memoryInfo, outputTensorValues[i].data(), outputTensorValues[i].size(), outputDims[i].data(),
-				outputDims[i].size()));
+				memoryInfo, outputTensorValues[i].data(), outputTensorValues[i].size(),
+				outputDims[i].data(), outputDims[i].size()));
 		}
 	}
 
@@ -191,10 +190,8 @@ public:
 		// The ONNX model exposes dynamic spatial dimensions. Keep the initial
 		// tensors minimal; configureForFrame() selects the source and backbone
 		// dimensions immediately before the first inference.
-		inputDims = {{1, 3, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1},
-			     {1, 1, 1, 1}, {1, 1, 1, 1}, {1}};
-		outputDims = {{1, 3, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1},
-			      {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}};
+		inputDims = {{1, 3, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, {1}};
+		outputDims = {{1, 3, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}};
 		return true;
 	}
 
@@ -207,11 +204,11 @@ public:
 			return {};
 		}
 		return cv::Mat(static_cast<int>(outputDims[1][2]), static_cast<int>(outputDims[1][3]), CV_32FC1,
-				outputTensorValues[1].data());
+			       outputTensorValues[1].data());
 	}
 
 	cv::Mat getForegroundOutput(const std::vector<std::vector<int64_t>> &outputDims,
-				     std::vector<std::vector<float>> &outputTensorValues)
+				    std::vector<std::vector<float>> &outputTensorValues)
 	{
 		if (outputDims.empty() || outputTensorValues.empty()) {
 			return {};
@@ -236,7 +233,8 @@ public:
 	virtual void loadInputToTensor(const cv::Mat &preprocessedImage, uint32_t, uint32_t,
 				       std::vector<std::vector<float>> &inputTensorValues)
 	{
-		std::copy(preprocessedImage.begin<float>(), preprocessedImage.end<float>(), inputTensorValues[0].begin());
+		std::copy(preprocessedImage.begin<float>(), preprocessedImage.end<float>(),
+			  inputTensorValues[0].begin());
 		inputTensorValues[5][0] = downsampleRatio;
 	}
 

@@ -56,14 +56,15 @@ int main(int argc, char **argv)
 		std::vector<std::vector<float>> inputValues;
 		std::vector<Ort::Value> inputTensors;
 		std::vector<Ort::Value> outputTensors;
-		model.allocateTensorBuffers(inputDims, outputDims, outputValues, inputValues, inputTensors, outputTensors);
+		model.allocateTensorBuffers(inputDims, outputDims, outputValues, inputValues, inputTensors,
+					    outputTensors);
 
 		cv::Mat sourceRGB(height, width, CV_32FC3);
 		cv::Mat backgroundRGB(height, width, CV_32FC3, cv::Scalar(0.15f, 0.35f, 0.55f));
 		for (int y = 0; y < height; ++y) {
 			for (int x = 0; x < width; ++x) {
-				sourceRGB.at<cv::Vec3f>(y, x) = cv::Vec3f(static_cast<float>(x) / width,
-									      static_cast<float>(y) / height, 0.4f);
+				sourceRGB.at<cv::Vec3f>(y, x) =
+					cv::Vec3f(static_cast<float>(x) / width, static_cast<float>(y) / height, 0.4f);
 			}
 		}
 		cv::Mat sourceCHW, backgroundCHW;
@@ -80,9 +81,9 @@ int main(int argc, char **argv)
 		for (int sample = 0; sample < measuredCount; ++sample) {
 			const auto started = std::chrono::steady_clock::now();
 			model.runNetworkInference(session, inputNames, outputNames, inputTensors, outputTensors);
-			samplesMs.push_back(std::chrono::duration<float, std::milli>(
-						std::chrono::steady_clock::now() - started)
-						.count());
+			samplesMs.push_back(
+				std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - started)
+					.count());
 		}
 		cv::Mat alpha = model.getNetworkOutput(outputDims, outputValues);
 		model.postprocessOutput(alpha);
@@ -97,8 +98,8 @@ int main(int argc, char **argv)
 		const float averageMs = std::accumulate(samplesMs.begin(), samplesMs.end(), 0.0f) / samplesMs.size();
 		const size_t p95Index = (samplesMs.size() * 95 + 99) / 100 - 1;
 		std::cout << "Background Matting V2 CPU inference at " << width << 'x' << height << ": " << averageMs
-			  << " ms average, " << samplesMs[p95Index] << " ms p95, " << samplesMs.back()
-			  << " ms max of " << measuredCount << " (after " << warmupCount << " warmups)\n";
+			  << " ms average, " << samplesMs[p95Index] << " ms p95, " << samplesMs.back() << " ms max of "
+			  << measuredCount << " (after " << warmupCount << " warmups)\n";
 		return EXIT_SUCCESS;
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

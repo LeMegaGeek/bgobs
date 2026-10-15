@@ -293,8 +293,7 @@ block(SCOPE_FOR POLICIES VARIABLES PROPAGATE OpenCV_FOUND)
 endblock()
 
 block(
-  SCOPE_FOR POLICIES
-  VARIABLES
+  SCOPE_FOR POLICIES VARIABLES
   PROPAGATE
     onnxruntime_FOUND
     OBS_BG_ONNXRUNTIME_DELAYLOAD
@@ -582,7 +581,12 @@ if(BUILD_TESTING)
   bgobs_copy_test_runtime(rvm-shape-test)
   add_test(NAME rvm-shape COMMAND rvm-shape-test)
 
-  add_executable(rvm-inference-test tests/models/rvm-inference-test.cpp src/plugin-support.c tests/models/test-support.c)
+  add_executable(
+    rvm-inference-test
+    tests/models/rvm-inference-test.cpp
+    src/plugin-support.c
+    tests/models/test-support.c
+  )
   target_include_directories(rvm-inference-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_include_directories(rvm-inference-test PRIVATE "$<TARGET_PROPERTY:OBS::libobs,INTERFACE_INCLUDE_DIRECTORIES>")
   target_compile_definitions(rvm-inference-test PRIVATE BGOBS_VERSION_STRING="test")
@@ -590,8 +594,7 @@ if(BUILD_TESTING)
   bgobs_copy_test_runtime(rvm-inference-test)
   add_test(
     NAME rvm-inference
-    COMMAND rvm-inference-test
-      "${CMAKE_CURRENT_SOURCE_DIR}/data/models/rvm_mobilenetv3_fp32.with_runtime_opt.ort"
+    COMMAND rvm-inference-test "${CMAKE_CURRENT_SOURCE_DIR}/data/models/rvm_mobilenetv3_fp32.with_runtime_opt.ort"
   )
 
   add_executable(
@@ -602,7 +605,8 @@ if(BUILD_TESTING)
   )
   target_include_directories(bgmv2-inference-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_include_directories(
-    bgmv2-inference-test PRIVATE "$<TARGET_PROPERTY:OBS::libobs,INTERFACE_INCLUDE_DIRECTORIES>"
+    bgmv2-inference-test
+    PRIVATE "$<TARGET_PROPERTY:OBS::libobs,INTERFACE_INCLUDE_DIRECTORIES>"
   )
   target_compile_definitions(bgmv2-inference-test PRIVATE BGOBS_VERSION_STRING="test")
   target_link_libraries(bgmv2-inference-test PRIVATE onnxruntime::onnxruntime OpenCV::opencv_core)
