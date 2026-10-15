@@ -677,7 +677,7 @@ void background_filter_update(void *data, obs_data_t *settings)
 
 	tf->isDisabled = true;
 	migrateBackgroundSettings(settings);
-	tf->settingsVersion = obs_data_get_int(settings, "settings_version");
+	tf->settingsVersion = static_cast<int>(obs_data_get_int(settings, "settings_version"));
 
 	const char *mattingModeValue = obs_data_get_string(settings, "matting_mode");
 	const std::string mattingMode =

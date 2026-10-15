@@ -3,6 +3,13 @@
 This file records user-visible BGOBS changes. Historical entries before the
 BGOBS fork remain available in Git history and their original tags.
 
+## 0.3.22 - 2026-10-15
+
+### Fixed
+
+- Fix the Windows build with MSVC warnings treated as errors when loading the
+  filter settings version.
+
 ## 0.3.21 - 2026-10-15
 
 ### Added
