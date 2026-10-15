@@ -34,6 +34,8 @@ jobs:
       ORT_VERSION: ${{ steps.config.outputs.ORT_VERSION }}
       ORT_WINDOWS_VERSION: ${{ steps.config.outputs.ORT_WINDOWS_VERSION }}
       ORT_WINDOWS_SHA256: ${{ steps.config.outputs.ORT_WINDOWS_SHA256 }}
+      DIRECTML_WINDOWS_VERSION: ${{ steps.config.outputs.DIRECTML_WINDOWS_VERSION }}
+      DIRECTML_WINDOWS_SHA256: ${{ steps.config.outputs.DIRECTML_WINDOWS_SHA256 }}
       OBS_LINUX_SHA256: ${{ steps.config.outputs.OBS_LINUX_SHA256 }}
       OBS_VERSION: ${{ steps.config.outputs.OBS_VERSION }}
       PLATFORM_TOOLS_SHA256: ${{ steps.config.outputs.PLATFORM_TOOLS_SHA256 }}
