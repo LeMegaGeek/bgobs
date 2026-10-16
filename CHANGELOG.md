@@ -3,6 +3,20 @@
 This file records user-visible BGOBS changes. Historical entries before the
 BGOBS fork remain available in Git history and their original tags.
 
+## 0.3.26 - 2026-10-16
+
+### Added
+
+- Add an opt-in calibrated-studio background-removal mode with a local empty-
+  background capture for each filter instance. It remains experimental and is
+  separate from the existing Studio style preset.
+
+### Changed
+
+- Ship Linux and Windows packages from the same source version, including the
+  calibrated-studio model, its interface, and the Windows DirectML runtime.
+- Keep the calibrated-studio mode optional; automatic RVM remains the default.
+
 ## 0.3.25 - 2026-10-15
 
 ### Fixed

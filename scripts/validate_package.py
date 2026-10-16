@@ -91,9 +91,15 @@ def validate_data(data_dir: Path, version: str, signing_status: str) -> None:
         "mask_alpha_filter.effect",
     ):
         require_file(data_dir / "effects" / effect, "OBS effect")
-    require_file(data_dir / "locale" / "en-US.ini", "English locale")
+    for locale_name, label in (("en-US.ini", "English"), ("fr-FR.ini", "French")):
+        locale_path = require_file(data_dir / "locale" / locale_name, f"{label} locale")
+        locale_text = locale_path.read_text(encoding="utf-8")
+        for key in ("MattingStudioCalibrated", "StudioCaptureButton", "StudioCaptureInstructions"):
+            if not any(line.startswith(f"{key}=") for line in locale_text.splitlines()):
+                raise ValueError(f"{label} locale is missing {key!r}: {locale_path}")
 
     model_dir = data_dir / "models"
+    require_file(model_dir / "bgmv2_mobilenetv2_hd.onnx", "calibrated-studio BMv2 model")
     models = sorted((*model_dir.glob("*.ort"), *model_dir.glob("*.onnx")))
     if not models:
         raise ValueError(f"No ONNX Runtime model found in {model_dir}")
