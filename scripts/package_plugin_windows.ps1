@@ -183,6 +183,14 @@ try {
     $ThirdPartyDir = Join-Path $TempRoot "THIRD-PARTY-NOTICES"
     New-Item -ItemType Directory -Path $ThirdPartyDir -Force | Out-Null
     Copy-Item $LibUsbCopyright (Join-Path $ThirdPartyDir "libusb.txt") -Force
+    $OrtPrefix = Join-Path $RootDir ".deps_vendor\ort_x64-prefix"
+    foreach ($Notice in @("DirectML-LICENSE.txt", "DirectML-LICENSE-CODE.txt", "DirectML-ThirdPartyNotices.txt")) {
+        $NoticePath = Join-Path $OrtPrefix $Notice
+        if (-not (Test-Path $NoticePath -PathType Leaf)) {
+            throw "DirectML third-party notice is missing: $NoticePath"
+        }
+        Copy-Item $NoticePath (Join-Path $ThirdPartyDir $Notice) -Force
+    }
     Copy-Item (Join-Path $TempRoot "$PluginName\data\BGOBS-SIGNING-STATUS.txt") `
         (Join-Path $TempRoot "BGOBS-SIGNING-STATUS.txt") -Force
 

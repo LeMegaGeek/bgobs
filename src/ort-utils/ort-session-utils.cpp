@@ -24,6 +24,7 @@
 
 #include "ort-session-utils.hpp"
 #include "../consts.h"
+#include "../models/ModelBackgroundMattingV2.hpp"
 #include "../models/ModelRVM.hpp"
 #include "../plugin-support.h"
 
@@ -32,7 +33,7 @@
 
 namespace {
 
-bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
+bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output, cv::Mat *reconstructedForegroundBGRA)
 {
 	auto *rvm = dynamic_cast<ModelRVM *>(tf->model.get());
 	if (!rvm || imageBGRA.empty() || imageBGRA.type() != CV_8UC4) {
@@ -41,10 +42,9 @@ bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
 
 	const int sourceWidth = imageBGRA.cols;
 	const int sourceHeight = imageBGRA.rows;
-	rvm->configureForFrame(tf->inputDims, tf->outputDims, sourceWidth, sourceHeight,
-			       tf->rvmDownsampleRatio.load());
-	rvm->prepareTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues,
-				  tf->inputTensorValues, tf->inputTensor, tf->outputTensor);
+	rvm->configureForFrame(tf->inputDims, tf->outputDims, sourceWidth, sourceHeight, tf->rvmDownsampleRatio.load());
+	rvm->prepareTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues, tf->inputTensorValues,
+				  tf->inputTensor, tf->outputTensor);
 
 	// RVM expects RGB BCHW data in [0, 1] at the original source resolution.
 	// Do not resize the source here: the model's downsample_ratio is applied
@@ -58,8 +58,7 @@ bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
 	rvm->loadInputToTensor(preprocessedImage, static_cast<uint32_t>(sourceWidth),
 			       static_cast<uint32_t>(sourceHeight), tf->inputTensorValues);
 
-	rvm->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
-				 tf->outputTensor);
+	rvm->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
 
 	cv::Mat outputImage = rvm->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
 	rvm->postprocessOutput(outputImage);
@@ -70,12 +69,113 @@ bool runRvmInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
 		return false;
 	}
 	output = outputImage.clone();
+	if (reconstructedForegroundBGRA) {
+		cv::Mat foregroundRGB = rvm->getForegroundOutput(tf->outputDims, tf->outputTensorValues);
+		if (foregroundRGB.empty() || foregroundRGB.type() != CV_32FC3 || foregroundRGB.cols != sourceWidth ||
+		    foregroundRGB.rows != sourceHeight) {
+			obs_log(LOG_ERROR, "RVM returned an invalid reconstructed foreground");
+			return false;
+		}
+		cv::Mat foregroundRGB8;
+		foregroundRGB.convertTo(foregroundRGB8, CV_8UC3, 255.0);
+		cv::cvtColor(foregroundRGB8, *reconstructedForegroundBGRA, cv::COLOR_RGB2BGRA);
+	}
 
 	// Cycle the recurrent states. The first frame uses zero [1,1,1,1] inputs;
 	// subsequent frames use the output state tensors at their native shapes.
 	rvm->assignOutputToInput(tf->outputTensorValues, tf->inputTensorValues);
 	for (size_t i = 1; i < 5 && i < tf->inputDims.size() && i < tf->outputDims.size(); ++i) {
 		tf->inputDims[i] = tf->outputDims[i];
+	}
+	return true;
+}
+
+bool runBackgroundMattingV2Inference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output,
+				     cv::Mat *reconstructedForegroundBGRA)
+{
+	auto *model = dynamic_cast<ModelBackgroundMattingV2 *>(tf->model.get());
+	if (!model || imageBGRA.empty() || imageBGRA.type() != CV_8UC4) {
+		return false;
+	}
+
+	cv::Mat backgroundBGRA;
+	{
+		std::lock_guard<std::mutex> lock(tf->studioBackgroundMutex);
+		backgroundBGRA = tf->studioBackgroundBGRA;
+	}
+	if (backgroundBGRA.empty() || backgroundBGRA.size() != imageBGRA.size()) {
+		return false;
+	}
+
+	// BMv2's HD export consumes source and background as RGB BCHW tensors in
+	// [0, 1]. Keep HD untouched, cap larger sources, and upscale tiny inputs so
+	// the export's fixed TopK operation has at least 5,000 spatial candidates.
+	const int largestSide = std::max(imageBGRA.cols, imageBGRA.rows);
+	const double minimumInputScale = std::sqrt(100000.0 / (static_cast<double>(imageBGRA.cols) * imageBGRA.rows));
+	const double scale =
+		std::min(largestSide > 1920 ? 1920.0 / largestSide : 1.0, std::max(1.0, minimumInputScale));
+	const cv::Size modelSize(std::max(1, static_cast<int>(std::lround(imageBGRA.cols * scale))),
+				 std::max(1, static_cast<int>(std::lround(imageBGRA.rows * scale))));
+	cv::Mat &sourceRGB = tf->studioSourceRGB;
+	cv::Mat &backgroundRGB = tf->studioBackgroundRGB;
+	cv::cvtColor(imageBGRA, sourceRGB, cv::COLOR_BGRA2RGB);
+	cv::cvtColor(backgroundBGRA, backgroundRGB, cv::COLOR_BGRA2RGB);
+	cv::Mat *modelSourceRGB = &sourceRGB;
+	cv::Mat *modelBackgroundRGB = &backgroundRGB;
+	if (modelSize != sourceRGB.size()) {
+		const int interpolation = scale > 1.0 ? cv::INTER_CUBIC : cv::INTER_AREA;
+		cv::resize(sourceRGB, tf->studioSourceResizedRGB, modelSize, 0.0, 0.0, interpolation);
+		cv::resize(backgroundRGB, tf->studioBackgroundResizedRGB, modelSize, 0.0, 0.0, interpolation);
+		modelSourceRGB = &tf->studioSourceResizedRGB;
+		modelBackgroundRGB = &tf->studioBackgroundResizedRGB;
+	}
+	cv::Mat &sourceFloat = tf->studioSourceFloat;
+	cv::Mat &backgroundFloat = tf->studioBackgroundFloat;
+	cv::Mat &sourceCHW = tf->studioSourceCHW;
+	cv::Mat &backgroundCHW = tf->studioBackgroundCHW;
+	modelSourceRGB->convertTo(sourceFloat, CV_32F, 1.0 / 255.0);
+	modelBackgroundRGB->convertTo(backgroundFloat, CV_32F, 1.0 / 255.0);
+	hwc_to_chw(sourceFloat, sourceCHW);
+	hwc_to_chw(backgroundFloat, backgroundCHW);
+
+	const std::vector<std::vector<int64_t>> expectedInputDims = {{1, 3, modelSize.height, modelSize.width},
+								     {1, 3, modelSize.height, modelSize.width}};
+	const std::vector<std::vector<int64_t>> expectedOutputDims = {{1, 1, modelSize.height, modelSize.width},
+								      {1, 3, modelSize.height, modelSize.width}};
+	const bool tensorShapeChanged = tf->inputDims != expectedInputDims || tf->outputDims != expectedOutputDims;
+	model->configureForFrame(tf->inputDims, tf->outputDims, modelSize.width, modelSize.height);
+	if (tensorShapeChanged || tf->inputTensor.empty() || tf->outputTensor.empty() ||
+	    tf->inputTensorValues.size() != tf->inputDims.size() ||
+	    tf->outputTensorValues.size() != tf->outputDims.size()) {
+		model->allocateTensorBuffers(tf->inputDims, tf->outputDims, tf->outputTensorValues,
+					     tf->inputTensorValues, tf->inputTensor, tf->outputTensor);
+	}
+	model->loadStudioFrames(sourceCHW, backgroundCHW, tf->inputTensorValues);
+	model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
+
+	cv::Mat alpha = model->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
+	model->postprocessOutput(alpha);
+	if (alpha.empty() || alpha.type() != CV_32FC1 || alpha.size() != modelSize) {
+		obs_log(LOG_ERROR, "Background Matting V2 returned an invalid alpha shape");
+		return false;
+	}
+	if (modelSize != imageBGRA.size()) {
+		cv::resize(alpha, alpha, imageBGRA.size(), 0.0, 0.0, cv::INTER_LINEAR);
+	}
+	output = alpha.clone();
+
+	if (reconstructedForegroundBGRA) {
+		cv::Mat foregroundRGB = model->getForegroundOutput(tf->outputDims, tf->outputTensorValues);
+		if (foregroundRGB.empty() || foregroundRGB.type() != CV_32FC3 || foregroundRGB.size() != modelSize) {
+			obs_log(LOG_ERROR, "Background Matting V2 returned an invalid foreground shape");
+			return false;
+		}
+		if (modelSize != imageBGRA.size()) {
+			cv::resize(foregroundRGB, foregroundRGB, imageBGRA.size(), 0.0, 0.0, cv::INTER_LINEAR);
+		}
+		cv::Mat foregroundRGB8;
+		foregroundRGB.convertTo(foregroundRGB8, CV_8UC3, 255.0);
+		cv::cvtColor(foregroundRGB8, *reconstructedForegroundBGRA, cv::COLOR_RGB2BGRA);
 	}
 	return true;
 }
@@ -97,16 +197,15 @@ bool runGenericInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat
 	tf->model->getNetworkInputSize(tf->inputDims, inputWidth, inputHeight);
 
 	const double scale = std::min(static_cast<double>(inputWidth) / imageRGB.cols,
-					     static_cast<double>(inputHeight) / imageRGB.rows);
-	const int scaledWidth = std::clamp(static_cast<int>(std::lround(imageRGB.cols * scale)), 1,
-					  static_cast<int>(inputWidth));
-	const int scaledHeight = std::clamp(static_cast<int>(std::lround(imageRGB.rows * scale)), 1,
-					   static_cast<int>(inputHeight));
+				      static_cast<double>(inputHeight) / imageRGB.rows);
+	const int scaledWidth =
+		std::clamp(static_cast<int>(std::lround(imageRGB.cols * scale)), 1, static_cast<int>(inputWidth));
+	const int scaledHeight =
+		std::clamp(static_cast<int>(std::lround(imageRGB.rows * scale)), 1, static_cast<int>(inputHeight));
 	const int padLeft = (static_cast<int>(inputWidth) - scaledWidth) / 2;
 	const int padTop = (static_cast<int>(inputHeight) - scaledHeight) / 2;
 	cv::Mat resizedImageRGB;
-	cv::resize(imageRGB, resizedImageRGB, cv::Size(scaledWidth, scaledHeight), 0.0, 0.0,
-		   cv::INTER_LINEAR);
+	cv::resize(imageRGB, resizedImageRGB, cv::Size(scaledWidth, scaledHeight), 0.0, 0.0, cv::INTER_LINEAR);
 	if (scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight)) {
 		cv::copyMakeBorder(resizedImageRGB, resizedImageRGB, padTop,
 				   static_cast<int>(inputHeight) - scaledHeight - padTop, padLeft,
@@ -122,8 +221,7 @@ bool runGenericInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat
 	tf->model->loadInputToTensor(preprocessedImage, inputWidth, inputHeight, tf->inputTensorValues);
 
 	// Run network inference
-	tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
-					 tf->outputTensor);
+	tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
 
 	// Get output
 	cv::Mat outputImage = tf->model->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
@@ -134,19 +232,20 @@ bool runGenericInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat
 	// Post-process output. The image will now be in [0,1] float, BHWC format.
 	tf->model->postprocessOutput(outputImage);
 	if (outputImage.cols == static_cast<int>(inputWidth) && outputImage.rows == static_cast<int>(inputHeight) &&
-		(scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight))) {
-		const int outputPadLeft = static_cast<int>(std::lround(padLeft * outputImage.cols /
-										static_cast<double>(inputWidth)));
-		const int outputPadTop = static_cast<int>(std::lround(padTop * outputImage.rows /
-										static_cast<double>(inputHeight)));
+	    (scaledWidth != static_cast<int>(inputWidth) || scaledHeight != static_cast<int>(inputHeight))) {
+		const int outputPadLeft =
+			static_cast<int>(std::lround(padLeft * outputImage.cols / static_cast<double>(inputWidth)));
+		const int outputPadTop =
+			static_cast<int>(std::lround(padTop * outputImage.rows / static_cast<double>(inputHeight)));
 		const int outputWidth = std::max(1, static_cast<int>(std::lround(scaledWidth * outputImage.cols /
-										static_cast<double>(inputWidth))));
+										 static_cast<double>(inputWidth))));
 		const int outputHeight = std::max(1, static_cast<int>(std::lround(scaledHeight * outputImage.rows /
-										static_cast<double>(inputHeight))));
-		const cv::Rect roi(std::clamp(outputPadLeft, 0, outputImage.cols - 1),
-					std::clamp(outputPadTop, 0, outputImage.rows - 1),
-					std::min(outputWidth, outputImage.cols - std::clamp(outputPadLeft, 0, outputImage.cols - 1)),
-					std::min(outputHeight, outputImage.rows - std::clamp(outputPadTop, 0, outputImage.rows - 1)));
+										  static_cast<double>(inputHeight))));
+		const cv::Rect roi(
+			std::clamp(outputPadLeft, 0, outputImage.cols - 1),
+			std::clamp(outputPadTop, 0, outputImage.rows - 1),
+			std::min(outputWidth, outputImage.cols - std::clamp(outputPadLeft, 0, outputImage.cols - 1)),
+			std::min(outputHeight, outputImage.rows - std::clamp(outputPadTop, 0, outputImage.rows - 1)));
 		cv::Mat cropped = outputImage(roi);
 		cv::resize(cropped, output, imageRGB.size(), 0.0, 0.0, cv::INTER_LINEAR);
 	} else {
@@ -275,13 +374,20 @@ bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat 
 	return true;
 }
 
-bool runFilterModelInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
+bool runFilterModelInferenceFloat(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output,
+				  cv::Mat *reconstructedForegroundBGRA)
 {
 	if (tf == nullptr || tf->session.get() == nullptr || tf->model.get() == nullptr || imageBGRA.empty()) {
 		return false;
 	}
 	if (tf->modelSelection == MODEL_RVM) {
-		return runRvmInference(tf, imageBGRA, output);
+		return runRvmInference(tf, imageBGRA, output, reconstructedForegroundBGRA);
+	}
+	if (tf->modelSelection == MODEL_BGMV2) {
+		return runBackgroundMattingV2Inference(tf, imageBGRA, output, reconstructedForegroundBGRA);
+	}
+	if (reconstructedForegroundBGRA) {
+		*reconstructedForegroundBGRA = imageBGRA.clone();
 	}
 	return runGenericInferenceFloat(tf, imageBGRA, output);
 }

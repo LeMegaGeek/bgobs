@@ -28,6 +28,10 @@ git diff --check
 Run the website checks in `pages/`, configure the native tests, build the
 plugin, and run CTest. Use the sanitizer configurations for parser, lifecycle,
 threading, or image-buffer changes when the platform supports them.
+For any background-matting change, follow the clip comparison, latency,
+stability, and platform-specific gates in
+[BACKGROUND-MATTING.md](BACKGROUND-MATTING.md); an ONNX inference test alone
+does not qualify the feature for a stable release.
 
 ## 3. Exercise integrations
 

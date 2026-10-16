@@ -70,6 +70,8 @@ bool getRGBAFromStageSurface(filter_data *tf, uint32_t &width, uint32_t &height)
 		// Clone the data to ensure tf->inputBGRA has its own copy
 		// This prevents use-after-unmap race condition
 		tf->inputBGRA = temp.clone();
+		tf->inputFrameSequence++;
+		tf->inputFrameCapturedAt = std::chrono::steady_clock::now();
 	}
 	gs_stagesurface_unmap(tf->stagesurface);
 	return true;

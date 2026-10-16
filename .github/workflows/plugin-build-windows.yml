@@ -29,11 +29,19 @@ on:
         required: true
         type: string
       ort-version:
-        description: The ONNX Runtime version.
+        description: The ONNX Runtime DirectML NuGet package version.
         required: true
         type: string
       ort-sha256:
-        description: The SHA-256 of the ONNX Runtime Windows x64 archive.
+        description: The SHA-256 of the ONNX Runtime DirectML NuGet package.
+        required: true
+        type: string
+      directml-version:
+        description: The version of the DirectML redistributable NuGet package.
+        required: true
+        type: string
+      directml-sha256:
+        description: The SHA-256 of the DirectML redistributable NuGet package.
         required: true
         type: string
       platform-tools-version:
@@ -237,11 +245,12 @@ jobs:
 
           ./scripts/build_libobs_windows.ps1
 
-      - name: Download ONNX Runtime (Windows x64)
+      - name: Download ONNX Runtime with DirectML (Windows x64)
         shell: pwsh
         env:
           ORT_SHA256: '${{ inputs.ort-sha256 }}'
-          KEEP_ENV_VARS: 'ORT_SHA256'
+          DIRECTML_SHA256: '${{ inputs.directml-sha256 }}'
+          KEEP_ENV_VARS: 'ORT_SHA256;DIRECTML_SHA256'
           PATH: '${{ env.FILTERED_PATH }}'
         run: |
           $ErrorActionPreference = 'Stop'
@@ -250,35 +259,66 @@ jobs:
 
           . $env:CLEAN_PWSH_ENV
 
-          $OrtTag = '${{ inputs.ort-version || 'v1.23.2' }}'
-          $OrtVersion = $OrtTag.TrimStart('v')
+          $OrtVersion = '${{ inputs.ort-version }}'
+          $DirectMLVersion = '${{ inputs.directml-version }}'
           $VendorDir = Join-Path $pwd '.deps_vendor'
-          $Archive = Join-Path $VendorDir "onnxruntime-win-x64-$OrtVersion.zip"
-          $ExtractDir = Join-Path $VendorDir 'onnxruntime-download'
-          $SourceDir = Join-Path $ExtractDir "onnxruntime-win-x64-$OrtVersion"
+          $Archive = Join-Path $VendorDir "microsoft.ml.onnxruntime.directml.$OrtVersion.zip"
+          $ExtractDir = Join-Path $VendorDir 'onnxruntime-directml-download'
+          $DirectMLArchive = Join-Path $VendorDir "microsoft.ai.directml.$DirectMLVersion.zip"
+          $DirectMLExtractDir = Join-Path $VendorDir 'directml-redist-download'
           $PrefixDir = Join-Path $VendorDir 'ort_x64-prefix'
-          $Url = "https://github.com/microsoft/onnxruntime/releases/download/$OrtTag/onnxruntime-win-x64-$OrtVersion.zip"
+          $Url = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/$OrtVersion/microsoft.ml.onnxruntime.directml.$OrtVersion.nupkg"
           $ExpectedHash = $env:ORT_SHA256.ToLowerInvariant()
+          $DirectMLUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/$DirectMLVersion/microsoft.ai.directml.$DirectMLVersion.nupkg"
+          $ExpectedDirectMLHash = $env:DIRECTML_SHA256.ToLowerInvariant()
 
           New-Item -ItemType Directory -Path $VendorDir -Force
           Invoke-WebRequest -Uri $Url -OutFile $Archive
           $ActualHash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($ActualHash -cne $ExpectedHash) {
-            throw "SHA-256 mismatch for ONNX Runtime: expected $ExpectedHash, got $ActualHash"
+            throw "SHA-256 mismatch for ONNX Runtime DirectML: expected $ExpectedHash, got $ActualHash"
           }
-          Remove-Item -Path $ExtractDir, $PrefixDir -Recurse -Force -ErrorAction SilentlyContinue
+          Invoke-WebRequest -Uri $DirectMLUrl -OutFile $DirectMLArchive
+          $ActualDirectMLHash = (Get-FileHash -LiteralPath $DirectMLArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($ActualDirectMLHash -cne $ExpectedDirectMLHash) {
+            throw "SHA-256 mismatch for DirectML redistributable: expected $ExpectedDirectMLHash, got $ActualDirectMLHash"
+          }
+          Remove-Item -Path $ExtractDir, $DirectMLExtractDir, $PrefixDir -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -Path $Archive -DestinationPath $ExtractDir -Force
-          $EmbeddedVersion = (Get-Content -LiteralPath "$SourceDir\VERSION_NUMBER" -Raw).Trim()
-          if ($EmbeddedVersion -cne $OrtVersion) {
-            throw "Unexpected ONNX Runtime version: expected $OrtVersion, got $EmbeddedVersion"
+          Expand-Archive -Path $DirectMLArchive -DestinationPath $DirectMLExtractDir -Force
+          $Nuspec = Get-Content -LiteralPath (Join-Path $ExtractDir 'Microsoft.ML.OnnxRuntime.DirectML.nuspec') -Raw
+          if ($Nuspec -notmatch "<version>\s*$([regex]::Escape($OrtVersion))\s*</version>") {
+            throw "Unexpected ONNX Runtime DirectML package version; expected $OrtVersion"
           }
-          New-Item -ItemType Directory -Path $PrefixDir -Force
-          Copy-Item -Path "$SourceDir\*" -Destination $PrefixDir -Recurse -Force
+          $DirectMLDependencyPattern = '<dependency id="Microsoft.AI.DirectML" version="' + [regex]::Escape($DirectMLVersion) + '"'
+          if ($Nuspec -notmatch $DirectMLDependencyPattern) {
+            throw "ONNX Runtime package does not reference the pinned DirectML version $DirectMLVersion"
+          }
+          $DirectMLNuspec = Get-Content -LiteralPath (Join-Path $DirectMLExtractDir 'Microsoft.AI.DirectML.nuspec') -Raw
+          if ($DirectMLNuspec -notmatch "<version>\s*$([regex]::Escape($DirectMLVersion))\s*</version>") {
+            throw "Unexpected DirectML redistributable package version; expected $DirectMLVersion"
+          }
+          New-Item -ItemType Directory -Path (Join-Path $PrefixDir 'include'), (Join-Path $PrefixDir 'lib') -Force
+          Copy-Item -Path (Join-Path $ExtractDir 'build\native\include\*') -Destination (Join-Path $PrefixDir 'include') -Recurse -Force
+          Get-ChildItem -LiteralPath (Join-Path $ExtractDir 'runtimes\win-x64\native') -File |
+            Where-Object { $_.Extension -in @('.dll', '.lib') } |
+            Copy-Item -Destination (Join-Path $PrefixDir 'lib') -Force
+          Copy-Item -LiteralPath (Join-Path $ExtractDir 'LICENSE') -Destination (Join-Path $PrefixDir 'LICENSE') -Force
+          Copy-Item -LiteralPath (Join-Path $ExtractDir 'ThirdPartyNotices.txt') -Destination (Join-Path $PrefixDir 'ThirdPartyNotices.txt') -Force
+          Copy-Item -LiteralPath (Join-Path $DirectMLExtractDir 'include\DirectML.h') -Destination (Join-Path $PrefixDir 'include\DirectML.h') -Force
+          Copy-Item -LiteralPath (Join-Path $DirectMLExtractDir 'bin\x64-win\DirectML.dll') -Destination (Join-Path $PrefixDir 'lib\DirectML.dll') -Force
+          Copy-Item -LiteralPath (Join-Path $DirectMLExtractDir 'LICENSE.txt') -Destination (Join-Path $PrefixDir 'DirectML-LICENSE.txt') -Force
+          Copy-Item -LiteralPath (Join-Path $DirectMLExtractDir 'LICENSE-CODE.txt') -Destination (Join-Path $PrefixDir 'DirectML-LICENSE-CODE.txt') -Force
+          Copy-Item -LiteralPath (Join-Path $DirectMLExtractDir 'ThirdPartyNotices.txt') -Destination (Join-Path $PrefixDir 'DirectML-ThirdPartyNotices.txt') -Force
 
           foreach ($RequiredPath in @(
             "$PrefixDir\include\onnxruntime_cxx_api.h",
+            "$PrefixDir\include\dml_provider_factory.h",
             "$PrefixDir\lib\onnxruntime.lib",
-            "$PrefixDir\lib\onnxruntime.dll"
+            "$PrefixDir\lib\onnxruntime.dll",
+            "$PrefixDir\lib\onnxruntime_providers_shared.dll",
+            "$PrefixDir\include\DirectML.h",
+            "$PrefixDir\lib\DirectML.dll"
           )) {
             if (-not (Test-Path $RequiredPath -PathType Leaf)) {
               Write-Error "Required ONNX Runtime file is missing: $RequiredPath"
